@@ -3,7 +3,7 @@
 // and returns the names of what happened. Render, HUD and audio only read the
 // world and react to those event names.
 //
-// Events: 'run-start' 'lane' 'jump' 'land' 'coin' 'hit' 'hit-<kind>' 'chaser-near'
+// Events: 'run-start' 'lane' 'jump' 'land' 'coin' 'hit' 'hit-<kind>' 'heel-start' 'heel-end' 'chaser-near'
 //         'chase-warning' 'chase-start' 'chase-survived' 'caught'
 import config from '../config.js';
 import { createRng } from './rng.js';
@@ -33,6 +33,9 @@ export function createWorld(cfg = config, seed = Date.now()) {
     lastRun: null,
     /** @type {{ kind: string, distance: number } | null} latest obstacle hit, for effects */
     lastHit: null,
+    /** @type {{ id: number, t: number }[]} woken dogs at the kid's heels, oldest first; t = seconds left */
+    heelDogs: [],
+    nextHeelId: 1,
     /** @type {string[]} events raised outside stepWorld (hotkeys), emitted on the next step */
     pending: [],
   };
@@ -57,6 +60,7 @@ export function startRun(world) {
   updateTrack(world.track, 0, 0);
   world.pending = [];
   world.lastHit = null;
+  world.heelDogs = [];
 }
 
 /** Start the chase event now (C key). Only while running and no event is on. */
@@ -71,6 +75,19 @@ function beginWarning(world, events) {
   world.chase.t = world.cfg.chase.warningTime;
   world.chase.nextAt = world.runTime + world.cfg.chase.every;
   events.push('chase-warning');
+}
+
+/** A hit sleeping dog joins the chase at the kid's heels; at the cap the oldest one's timer restarts. */
+function wakeHeelDog(world, events) {
+  const fx = world.cfg.effects;
+  if (world.heelDogs.length >= fx.maxHeelDogs) {
+    const oldest = world.heelDogs.shift();
+    oldest.t = fx.heelTime;
+    world.heelDogs.push(oldest);
+  } else {
+    world.heelDogs.push({ id: world.nextHeelId++, t: fx.heelTime });
+  }
+  events.push('heel-start');
 }
 
 /**
@@ -146,6 +163,7 @@ export function stepWorld(world, input, dt) {
     if (o.kind === 'cart') world.coins = Math.max(0, world.coins - fx.cartCoinLoss);
     world.lastHit = { kind: o.kind, distance: p.distance };
     events.push('hit', `hit-${o.kind}`);
+    if (o.kind === 'dog') wakeHeelDog(world, events);
   }
   for (const c of world.track.coins) {
     if (c.taken) continue;
@@ -154,6 +172,14 @@ export function stepWorld(world, input, dt) {
     c.taken = true;
     world.coins++;
     events.push('coin');
+  }
+
+  // Heel dogs leave when their time runs out
+  for (const h of world.heelDogs) h.t -= dt;
+  const leaving = world.heelDogs.filter((h) => h.t <= 0);
+  if (leaving.length) {
+    world.heelDogs = world.heelDogs.filter((h) => h.t > 0);
+    for (let i = 0; i < leaving.length; i++) events.push('heel-end');
   }
 
   // Chaser: constant speed, gap = how far behind it is
@@ -194,7 +220,7 @@ export function stepWorld(world, input, dt) {
     }
   }
   ch.angry = chase.phase === 'active';
-  ch.speedMps = cfg.chaser.speed * (ch.angry ? cc.speedMultiplier : 1);
+  ch.speedMps = cfg.chaser.speed * (ch.angry ? cc.speedMultiplier : 1) + world.heelDogs.length * cfg.effects.heelSpeedBonus;
 
   return events;
 }

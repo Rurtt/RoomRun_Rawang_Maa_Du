@@ -261,3 +261,55 @@ test('restart clears lastHit', () => {
   runUntil(w, sprint, (e) => e.includes('hit'), 2); startRun(w);
   expect(w.lastHit).toBeNull();
 });
+
+test('dog hit adds a heel dog for 10 s', () => {
+  const w = createWorld(emptyCfg(), 1); startRun(w); w.track.obstacles.push(obs('dog', 3));
+  const first = runUntil(w, sprint, (e) => e.includes('hit'), 2);
+  expect(count(first.events, 'heel-start')).toBe(1); expect(w.heelDogs.length).toBe(1);
+  const mid = run(w, sprint, 9.9); expect(count(mid.events, 'heel-end')).toBe(0);
+  const end = run(w, sprint, 0.2); expect(count(end.events, 'heel-end')).toBe(1);
+  expect(w.heelDogs.length).toBe(0);
+});
+
+test('heel dog makes the boss 1 m/s faster', () => {
+  const w = createWorld(emptyCfg(), 1); startRun(w); w.track.obstacles.push(obs('dog', 3));
+  runUntil(w, sprint, (e) => e.includes('hit'), 2);
+  expect(w.chaser.speedMps).toBe(7);
+  run(w, sprint, 10.1); expect(w.chaser.speedMps).toBe(6);
+});
+
+test('two heel dogs in a chase event: 10.4 m/s', () => {
+  const w = createWorld(emptyCfg(), 1); startRun(w); run(w, sprint, 1);
+  triggerChase(w); run(w, sprint, 3.1); expect(w.chase.phase).toBe('active');
+  const d = w.player.distance;
+  w.track.obstacles.push(obs('dog', d + 3), obs('dog', d + 8));
+  run(w, sprint, 4);
+  expect(w.heelDogs.length).toBe(2); expect(w.chaser.speedMps).toBeCloseTo(10.4, 5);
+});
+
+test('third dog refreshes the oldest', () => {
+  const w = createWorld(emptyCfg(), 1); startRun(w);
+  w.track.obstacles.push(obs('dog', 3), obs('dog', 8), obs('dog', 13));
+  const { events } = run(w, sprint, 7);
+  expect(count(events, 'heel-start')).toBe(3);
+  expect(w.heelDogs.length).toBe(2);
+  const [a, b] = w.heelDogs;
+  expect(b.id).toBeLessThan(a.id); // the first dog moved to the end
+  expect(b.t).toBeGreaterThan(a.t);
+});
+
+test('sprinter who hits a dog at the start is not caught', () => {
+  const w = createWorld(emptyCfg(), 1); startRun(w); w.track.obstacles.push(obs('dog', 2));
+  let minGap = Infinity, caught = 0;
+  for (let t = 0; t < 20; t += DT) {
+    caught += count(stepWorld(w, sprint, DT), 'caught');
+    minGap = Math.min(minGap, w.chaser.gap);
+  }
+  expect(caught).toBe(0); expect(minGap).toBeGreaterThan(12);
+});
+
+test('restart clears heel dogs', () => {
+  const w = createWorld(emptyCfg(), 1); startRun(w); w.track.obstacles.push(obs('dog', 3));
+  runUntil(w, sprint, (e) => e.includes('hit'), 2); startRun(w);
+  expect(w.heelDogs).toEqual([]); expect(w.chaser.speedMps).toBe(6);
+});
