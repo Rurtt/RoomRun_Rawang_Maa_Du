@@ -35,3 +35,19 @@ export function heelSlot(index, playerX, laneWidth) {
   const x = Math.max(-edge, Math.min(edge, playerX + side * 0.9));
   return { x, back: index === 0 ? 0.4 : 0.8 }; // the camera's lower edge is ~2 m behind the kid: keep small dogs well inside
 }
+
+/** Which side of the kid the boss runs on: toward the road centre so it doesn't hide the kid. */
+export function chaserSide(playerX) {
+  return playerX > 0.1 ? -1 : 1;
+}
+
+/**
+ * Caught: heel and pack dogs sit on the far side from the boss (which grabs the
+ * shirt 0.5 m to its side), so nothing clips into the hero shot.
+ * @returns {{ x: number, back: number }} back = metres behind the kid
+ */
+export function caughtDogSpot(index, playerX, laneWidth) {
+  const edge = 1.5 * laneWidth - 0.4;
+  const x = playerX - chaserSide(playerX) * (0.9 + 0.45 * index);
+  return { x: Math.max(-edge, Math.min(edge, x)), back: 0.5 + 0.35 * index };
+}

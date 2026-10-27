@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import config from '../src/config.js';
-import { chaserBack, showChaser, eyeColor, heelSlot } from '../src/render/chaserView.js';
+import { chaserBack, showChaser, eyeColor, heelSlot, chaserSide, caughtDogSpot } from '../src/render/chaserView.js';
 
 const world = ({ phase = 'running', visible = false, chase = 'idle' } = {}) => ({ phase, chaser: { visible }, chase: { phase: chase } });
 
@@ -29,5 +29,16 @@ test('heelSlot: two different spots right behind the kid, never off the road', (
     const a = heelSlot(0, px, 2.5), b = heelSlot(1, px, 2.5);
     expect(a.x).not.toBeCloseTo(b.x);
     for (const s of [a, b]) { expect(Math.abs(s.x)).toBeLessThanOrEqual(3.75); expect(s.back).toBeGreaterThan(0); expect(s.back).toBeLessThanOrEqual(2); }
+  }
+});
+
+test('caught: small dogs sit on the far side from the grabbing boss, clear of it', () => {
+  for (const px of [-2.5, 0, 2.5]) {
+    const bossX = px + chaserSide(px) * 0.5, bossBack = 1.0;
+    for (let i = 0; i < 3; i++) {
+      const d = caughtDogSpot(i, px, 2.5);
+      expect(Math.hypot(d.x - bossX, d.back - bossBack)).toBeGreaterThanOrEqual(0.8);
+      expect(Math.abs(d.x)).toBeLessThanOrEqual(3.75);
+    }
   }
 });

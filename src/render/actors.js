@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import config from '../config.js';
 import { animationFor, loadModel, makeStandIn, addEyes, dogVariant, BOSS_EYES } from './models.js';
 import { advanceGallop, gallopPose } from './dogPose.js';
-import { chaserBack, showChaser, eyeColor, heelSlot } from './chaserView.js';
+import { chaserBack, showChaser, eyeColor, heelSlot, chaserSide, caughtDogSpot } from './chaserView.js';
 
 const KINDS = ['dog', 'jar', 'cart', 'tuktuk'];
 const COIN_Y = 0.85;
@@ -174,6 +174,15 @@ export function createActors(scene, cfg = config) {
     const laneW = cfg.player.laneWidth;
     const kidZ = -interp.z;
     const ease = (from, to, rate) => from + (to - from) * Math.min(1, dt * rate);
+    // caught: every small dog sits clear of the boss's grab (the sim is frozen, timers stop)
+    const caught = world.phase === 'caught';
+    let caughtIdx = 0;
+    const sitForCatch = (d) => {
+      const spot = caughtDogSpot(caughtIdx++, interp.x, laneW);
+      d.x = ease(d.x, spot.x, 4);
+      d.z = ease(d.z, kidZ + 0.6 + spot.back, 4); // the kid is pulled back 0.6 m
+      if (d.mode !== 'sit') { d.mode = 'sit'; d.t = 0; }
+    };
 
     // heel dogs follow their slot; one whose time ran out sits where it is and drops out of frame
     const ids = new Set(world.heelDogs.map((h) => h.id));
@@ -184,6 +193,7 @@ export function createActors(scene, cfg = config) {
       let d = heel.get(h.id);
       const slot = heelSlot(/** @type {0|1} */ (Math.min(i, 1)), interp.x, laneW);
       if (!d) { d = newSmallDog(slot.x, kidZ + slot.back); d.hop = 1; heel.set(h.id, d); }
+      if (caught) { sitForCatch(d); return; }
       d.x = ease(d.x, slot.x, 5);
       d.z = ease(d.z, kidZ + slot.back, 8);
     });
@@ -216,7 +226,9 @@ export function createActors(scene, cfg = config) {
       for (const d of pack) {
         d.t += dt;
         const off = (d.i - (pack.length - 1) / 2) * 1.3;
-        if (packMode === 'giveup') {
+        if (caught) {
+          sitForCatch(d);
+        } else if (packMode === 'giveup') {
           if (d.t > 0) d.mode = 'lie';
         } else if (intro) {
           d.x = ease(d.x, interp.x + off * 1.1, 4);
@@ -227,7 +239,7 @@ export function createActors(scene, cfg = config) {
         } else {
           d.z = ease(d.z, kidZ + 6, 2); // fall back out of frame
         }
-        d.holder.visible = intro || bossShown || packMode === 'giveup' || d.z < kidZ + 4;
+        d.holder.visible = caught || intro || bossShown || packMode === 'giveup' || d.z < kidZ + 4;
         poseSmallDog(d, packMode === 'giveup' ? 0 : p.speedMps, dt);
       }
       if (packMode === 'giveup' && packT > 2) dropPack();
@@ -379,7 +391,7 @@ export function createActors(scene, cfg = config) {
     let back = chaserBack(ch.gap, cfg.chaser);
     if (!ch.visible && !caught) back = chaserBack(cfg.chaser.visibleGap * 0.5, cfg.chaser) + (1 - peekIn) * 3;
     back += (0.4 - back) * lunge;
-    const side = interp.x > 0.1 ? -1 : 1; // drift toward the road centre so it doesn't hide the kid
+    const side = chaserSide(interp.x);
     const targetX = interp.x + side * (caught ? 0.5 : 0.7); // caught: beside the kid so the head reads on camera
     chaserX += (targetX - chaserX) * Math.min(1, dt * 4);
     // caught: the kid is pulled back 0.6 m, the dog stays just behind him
