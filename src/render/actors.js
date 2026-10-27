@@ -56,7 +56,7 @@ export function createActors(scene, cfg = config) {
   /** @type {Record<string, THREE.Object3D>} */
   const templates = {};
   // the sleeping dog GLB is only 0.8 m long and 0.36 m high: too small to read from the follow camera
-  const GROW = { dog: 1.4 }; // 1.6 out-sized the boss dog
+  const GROW = { dog: 1.5 }; // 1.6 out-sized the boss dog, 1.4 read too small without the outline
   const grown = (name, m) => { m.scale.multiplyScalar(GROW[name] ?? 1); return m; };
   for (const name of [...KINDS, 'coin']) {
     templates[name] = grown(name, makeStandIn(/** @type {any} */ (name)));
