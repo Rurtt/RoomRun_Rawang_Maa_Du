@@ -11,7 +11,7 @@ import { chaserBack, showChaser, eyeColor, heelSlot, chaserSide, caughtDogSpot }
 const KINDS = ['dog', 'jar', 'cart', 'tuktuk'];
 const COIN_Y = 0.85;
 /** Heel and pack dogs: the boss mesh, smaller and tan like the sleeping dogs. */
-const SMALL_DOG = { scale: 0.6, tint: 0xd9a066 };
+const SMALL_DOG = { scale: 0.75, tint: 0xd9a066 };
 /** Boss dog size over its model: it should tower over the heel dogs (Pong, 2026-10-28). */
 const BOSS_SCALE = 1.4;
 /** Mixamo kid.glb is 0.98 m tall; the game's kid is 1.3 m (2026-10-28). */
@@ -56,7 +56,7 @@ export function createActors(scene, cfg = config) {
   /** @type {Record<string, THREE.Object3D>} */
   const templates = {};
   // the sleeping dog GLB is only 0.8 m long and 0.36 m high: too small to read from the follow camera
-  const GROW = { dog: 1.6 };
+  const GROW = { dog: 1.25 }; // 1.6 out-sized the boss dog
   const grown = (name, m) => { m.scale.multiplyScalar(GROW[name] ?? 1); return m; };
   for (const name of [...KINDS, 'coin']) {
     templates[name] = grown(name, makeStandIn(/** @type {any} */ (name)));
