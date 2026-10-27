@@ -142,21 +142,25 @@ export function createActors(scene, cfg = config) {
     stepKick = Math.max(0, stepKick - dt * 6);
     const amp = clip === 'idle' ? 0 : Math.min(1, 0.25 + speed / cfg.player.maxSpeed);
     const s = Math.sin(phase);
+    // blend toward the pose instead of snapping: run <-> jump eases over ~0.1 s
+    const ease = (obj, key, to) => { obj[key] += (to - obj[key]) * Math.min(1, dt * 20); };
     if (clip === 'jump') {
-      rig.legs[0].rotation.x = 0.9; rig.legs[1].rotation.x = -0.5;
-      rig.arms[0].rotation.x = -2.4; rig.arms[1].rotation.x = -2.0;
-      rig.arms[0].rotation.z = -0.3; rig.arms[1].rotation.z = 0.3;
-      rig.body.position.y = 0;
+      // tuck legs on the way up, reach down for the ground on the way down
+      const rise = Math.max(-1, Math.min(1, p.vy / cfg.player.jumpVelocity));
+      ease(rig.legs[0].rotation, 'x', 0.4 + 0.5 * rise); ease(rig.legs[1].rotation, 'x', -0.2 - 0.3 * rise);
+      ease(rig.arms[0].rotation, 'x', -2.4); ease(rig.arms[1].rotation, 'x', -2.0);
+      ease(rig.arms[0].rotation, 'z', -0.3); ease(rig.arms[1].rotation, 'z', 0.3);
+      ease(rig.body.position, 'y', 0);
     } else {
-      rig.legs[0].rotation.x = s * 1.0 * amp; rig.legs[1].rotation.x = -s * 1.0 * amp;
-      rig.arms[0].rotation.x = -s * 1.2 * amp; rig.arms[1].rotation.x = s * 1.2 * amp;
-      rig.arms[0].rotation.z = 0; rig.arms[1].rotation.z = 0;
+      ease(rig.legs[0].rotation, 'x', s * 1.0 * amp); ease(rig.legs[1].rotation, 'x', -s * 1.0 * amp);
+      ease(rig.arms[0].rotation, 'x', -s * 1.2 * amp); ease(rig.arms[1].rotation, 'x', s * 1.2 * amp);
+      ease(rig.arms[0].rotation, 'z', 0); ease(rig.arms[1].rotation, 'z', 0);
       rig.body.position.y = Math.abs(s) * 0.09 * amp + (clip === 'idle' ? Math.sin(time * 2.5) * 0.01 : 0);
     }
     // squash on each foot plant, stretch between; crouch at take-off, stretch rising, squash on landing
     let squash = clip === 'run' ? 0.05 * Math.cos(phase * 2) * amp - stepKick * 0.06 : 0;
-    if (jumpT < 0.08) squash = -0.22;
-    else if (clip === 'jump') squash = p.vy > 0 ? 0.14 : 0.04;
+    if (jumpT < 0.08) squash = -0.22 * (1 - jumpT / 0.08);
+    else if (clip === 'jump') squash = 0.04 + 0.1 * Math.max(0, p.vy / cfg.player.jumpVelocity);
     if (landT < 0.12) squash = -0.18 * (1 - landT / 0.12);
     rig.body.scale.set(1 - squash * 0.5, 1 + squash, 1 - squash * 0.5);
     rig.body.rotation.x = clip === 'stumble' ? 0.35 + Math.sin(time * 30) * 0.08 : clip === 'run' ? 0.12 * amp : 0;

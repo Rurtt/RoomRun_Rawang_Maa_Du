@@ -57,8 +57,17 @@ test('ghost-near fires when the gap drops under visibleGap', () => {
   expect(t).toBeCloseTo((20 - 12) / 6, 1);
 });
 
-test('lane change respects cooldown and edges', () => {
+test('default: no lane cooldown, a quick double tap crosses two lanes', () => {
   const w = createWorld(emptyCfg(), 1); startRun(w);
+  expect(stepWorld(w, frame({ speed: 1, laneDelta: -1 }), DT)).toContain('lane');
+  run(w, sprint, 0.05);
+  expect(stepWorld(w, frame({ speed: 1, laneDelta: 1 }), DT)).toContain('lane');
+  expect(stepWorld(w, frame({ speed: 1, laneDelta: 1 }), DT)).toContain('lane'); expect(w.player.lane).toBe(1);
+});
+
+test('lane change respects cooldown (when set) and edges', () => {
+  const c = emptyCfg(); c.player.laneCooldown = 0.35;
+  const w = createWorld(c, 1); startRun(w);
   expect(stepWorld(w, frame({ speed: 1, laneDelta: -1 }), DT)).toContain('lane'); expect(w.player.lane).toBe(-1);
   run(w, sprint, 0.2);
   expect(stepWorld(w, frame({ speed: 1, laneDelta: 1 }), DT)).not.toContain('lane'); expect(w.player.lane).toBe(-1);

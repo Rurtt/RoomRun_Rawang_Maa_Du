@@ -4,7 +4,7 @@ export default {
   title: 'ซอยผี',
   loop: { stepDt: 1 / 120, maxFrameDt: 0.1 },
   cadence: { windowMs: 1500, stopAfterMs: 700, minRate: 1.0, fullRate: 4.0, smoothTau: 0.2 },
-  player: { maxSpeed: 12, laneWidth: 2.5, laneChangeTime: 0.15, laneCooldown: 0.35,
+  player: { maxSpeed: 12, laneWidth: 2.5, laneChangeTime: 0.15, laneCooldown: 0, // keyboard: none; phones have motion.gestureCooldownMs
             jumpVelocity: 7, gravity: 20, stumbleTime: 1.0, stumbleFactor: 0.4,
             startSpeedThreshold: 0.2 },
   chaser: { speed: 6, startGap: 20, maxGap: 50, visibleGap: 12, meterRange: 30 },
