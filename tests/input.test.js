@@ -74,3 +74,13 @@ test('hub reads every source each call so one-shots never leak to the next read'
 test('empty hub is a standing frame', () => {
   expect(createInputHub().read(0)).toEqual({ speed: 0, laneDelta: 0, jump: false, steps: 0 });
 });
+
+test('keys typed into a text field (debug panel) never steer or jump', () => {
+  const k = createKeyboardSource({ cadence: createCadence() });
+  const field = Object.assign(new EventTarget(), { tagName: 'INPUT' });
+  k.attach(field);
+  const e = new Event('keydown', { cancelable: true }); Object.assign(e, { code: 'Space', repeat: false });
+  field.dispatchEvent(e);
+  expect(e.defaultPrevented).toBe(false);
+  expect(k.read(performance.now()).jump).toBe(false);
+});

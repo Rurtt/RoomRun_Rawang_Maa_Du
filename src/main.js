@@ -16,6 +16,8 @@ import { slowMoTarget } from './render/timeScale.js';
 import { createHud } from './hud/hud.js';
 import { meterFill } from './hud/format.js';
 import { createAudio, soundForEvent } from './audio/audio.js';
+import { hotkeyAction } from './debug/hotkeys.js';
+import { createDebugPanel } from './debug/panel.js';
 
 document.title = config.title;
 
@@ -91,27 +93,26 @@ function render(alpha) {
 
 let timeScale = 1;
 
+/** Live numbers for the debug panel. rttMs is filled by the phone link (Task 11). */
+const stats = { fps: 0, rttMs: /** @type {Record<'L'|'R', number|null>} */ ({ L: null, R: null }) };
+const panel = createDebugPanel(config, stats);
+
 window.addEventListener('keydown', (e) => {
-  if (e.repeat) return;
-  if (e.code === 'KeyR') { startRun(world); prev.distance = 0; emit(['run-start']); }
-  else if (e.code === 'KeyC') triggerChase(world);
+  if (e.repeat || /** @type {any} */ (e.target)?.tagName === 'INPUT') return; // typing in the panel
+  const action = hotkeyAction(e.code);
+  if (action === 'restart') { startRun(world); prev.distance = 0; emit(['run-start']); }
+  else if (action === 'chase') triggerChase(world); // no-op unless a run is going
+  else if (action === 'panel') panel.toggle();
 });
 
 const loop = createFixedLoop({ step, render, stepDt: config.loop.stepDt, maxFrameDt: config.loop.maxFrameDt });
-
-// Temporary fps readout (moves into the debug panel in Task 10).
-const fpsEl = document.createElement('div');
-fpsEl.id = 'fps';
-fpsEl.style.cssText = 'position:fixed;left:8px;bottom:8px;color:#fff;font:12px monospace;z-index:10';
-document.body.append(fpsEl);
-let fps = 0;
 
 let last = performance.now();
 function tick(now) {
   const dt = (now - last) / 1000;
   last = now;
-  if (dt > 0) fps += (1 / dt - fps) * 0.05;
-  fpsEl.textContent = `${fps.toFixed(0)} fps`;
+  if (dt > 0) stats.fps += (1 / dt - stats.fps) * 0.05;
+  panel.update();
   timeScale += (slowMoTarget(world) - timeScale) * Math.min(1, Math.max(0, dt) * 12);
   const scaled = Math.min(dt, config.loop.maxFrameDt) * timeScale;
   renderDt = scaled;
@@ -123,7 +124,7 @@ requestAnimationFrame(tick);
 // Dev-only handle for browser checks (Playwright) and console poking.
 if (import.meta.env.DEV) {
   window.soip = {
-    world, view, environment, actors, hud, audio, hub, keyboard, config, startRun, triggerChase,
+    world, view, environment, actors, hud, audio, panel, stats, hub, keyboard, config, startRun, triggerChase,
     pause(on = true) { devPaused = on; },
     /** Step the sim `seconds` with a fixed input (lane/jump fire once), then draw one frame. */
     simulate(seconds, f = {}) {

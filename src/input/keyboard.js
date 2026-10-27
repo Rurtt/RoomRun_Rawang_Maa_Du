@@ -36,6 +36,7 @@ export function createKeyboardSource({ cadence }) {
     /** @param {EventTarget} target @returns {() => void} detach */
     attach(target) {
       const onKey = (/** @type {KeyboardEvent} */ e) => {
+        if (/** @type {any} */ (e.target)?.tagName === 'INPUT') return; // typing in the debug panel
         if (PREVENT.has(e.code)) e.preventDefault();
         handleKey(e.code, e.repeat, performance.now());
       };
