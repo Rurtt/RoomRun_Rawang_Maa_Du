@@ -1,6 +1,7 @@
 // Everything that moves: the kid, the boss dog, obstacles and coins, kept in sync
 // with the sim. Meshes are keyed by sim id and pooled per kind.
 import * as THREE from 'three';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import config from '../config.js';
 import { animationFor, loadModel, makeStandIn, addEyes, dogVariant, BOSS_EYES } from './models.js';
 import { advanceGallop, gallopPose } from './dogPose.js';
@@ -10,6 +11,10 @@ const KINDS = ['dog', 'jar', 'cart', 'tuktuk'];
 const COIN_Y = 0.85;
 /** Heel and pack dogs: the boss mesh, smaller and tan like the sleeping dogs. */
 const SMALL_DOG = { scale: 0.6, tint: 0xd9a066 };
+/** Boss dog size over its model: it should tower over the heel dogs (Pong, 2026-10-28). */
+const BOSS_SCALE = 1.4;
+/** Mixamo kid.glb is 0.98 m tall; the game's kid is 1.3 m (2026-10-28). */
+const KID_SCALE = 1.33;
 /** Stride: one full leg cycle (two steps) per this many metres. */
 const STRIDE = 2.6;
 
@@ -72,6 +77,7 @@ export function createActors(scene, cfg = config) {
     if (m.userData.standIn || !(m.userData.animations || []).length) return;
     kidModel.remove(kid);
     kid = m;
+    kid.scale.setScalar(KID_SCALE);
     kidModel.add(kid);
     const clips = m.userData.animations || [];
     if (clips.length) {
@@ -87,23 +93,44 @@ export function createActors(scene, cfg = config) {
   chaserHolder.add(blob(1.3));
   const chaserModel = new THREE.Group();
   chaserModel.rotation.y = Math.PI;
+  chaserModel.scale.setScalar(BOSS_SCALE);
   chaserHolder.add(chaserModel);
   const bossPose = new THREE.Group();
   chaserModel.add(bossPose);
   let boss = makeStandIn('bossdog');
   bossPose.add(boss);
+  /** rigged boss (Mesh2Motion clips: Run, Bark, Bite, Howl, Idle, Sit); null = code gallop on the stand-in */
+  let bossMixer = null;
+  /** @type {Record<string, THREE.AnimationAction>} */
+  let bossClips = {};
+  let bossClip = '';
+  /** seconds left of the howl at chase start */
+  let howlT = 0;
   loadModel('bossdog').then((m) => {
     if (m.userData.standIn) return;
     addEyes(m, BOSS_EYES);
     bossPose.remove(boss); boss = m; bossPose.add(boss);
+    const clips = m.userData.animations || [];
+    if (clips.length) {
+      bossMixer = new THREE.AnimationMixer(m);
+      bossClips = Object.fromEntries(clips.map((c) => [c.name, bossMixer.clipAction(c)]));
+    }
   });
+  /** Cross-fade one dog's mixer to a clip (missing clip: keep what plays). */
+  function fadeTo(clips, from, to) {
+    if (to === from || !clips[to]) return from;
+    clips[to].reset().fadeIn(0.2).play();
+    if (clips[from]) clips[from].fadeOut(0.2);
+    return to;
+  }
   const amberEye = new THREE.Color(0xffb020), redEye = new THREE.Color(0xff2020);
   let redness = 0;
 
   // ---- small running dogs (heel, pack, title): holder (world spot) > model (faces -Z) > pose (gallop)
   /**
    * @typedef {{ holder: THREE.Group, pose: THREE.Group, gallop: number, x: number, z: number,
-   *   mode: string, t: number, hop: number, i: number, v?: number }} SmallDog
+   *   mode: string, t: number, hop: number, i: number, v?: number,
+   *   mixer?: THREE.AnimationMixer, clips?: Record<string, THREE.AnimationAction>, clip?: string }} SmallDog
    */
   /** @returns {SmallDog} */
   function newSmallDog(x, z) {
@@ -114,16 +141,38 @@ export function createActors(scene, cfg = config) {
     holder.add(model);
     const pose = new THREE.Group();
     model.add(pose);
-    pose.add(dogVariant(boss, SMALL_DOG));
+    const body = dogVariant(boss, SMALL_DOG);
+    pose.add(body);
     root.add(holder);
-    return { holder, pose, gallop: Math.random() * 6, x, z, mode: 'run', t: 0, hop: 0, i: 0 };
+    /** @type {SmallDog} */
+    const d = { holder, pose, gallop: Math.random() * 6, x, z, mode: 'run', t: 0, hop: 0, i: 0 };
+    if (bossMixer) {
+      // clones don't carry the clips: bind the boss's clips to this copy
+      d.mixer = new THREE.AnimationMixer(body);
+      d.clips = Object.fromEntries(boss.userData.animations.map((c) => [c.name, d.mixer.clipAction(c)]));
+      d.clip = fadeTo(d.clips, '', 'Run');
+      d.mixer.update(Math.random()); // out of step with each other
+    }
+    return d;
   }
   function dropSmallDog(d) { root.remove(d.holder); }
   /** Gallop (or sit / lie down) and place a small dog at its world spot. */
   function poseSmallDog(d, speedMps, dt) {
     d.hop = Math.max(0, d.hop - dt * 3);
     d.holder.position.set(d.x, Math.sin(d.hop * Math.PI) * 0.5, d.z);
-    if (d.mode === 'sit') {
+    if (d.mixer) {
+      // rigged: Sit clip for sit and lie (lie squashes it flat), Run otherwise
+      const still = d.mode === 'sit' || d.mode === 'lie';
+      d.clip = fadeTo(d.clips, d.clip, d.mode === 'bark' ? 'Bark' : still ? 'Sit' : 'Run');
+      d.clips.Run.timeScale = Math.max(speedMps, 3) / 7;
+      d.mixer.update(dt);
+      const k = d.mode === 'lie' ? Math.min(1, d.t * 2) : 0;
+      d.pose.position.y = 0;
+      d.pose.rotation.set(0, 0, 0);
+      d.pose.scale.set(1 + 0.15 * k, 1 - 0.4 * k, 1);
+      return;
+    }
+    if (d.mode === 'sit' || d.mode === 'bark') {
       // pants, sits, scratches: front up, back squashed, a side wiggle
       d.pose.position.y = 0;
       d.pose.rotation.set(-0.45 * Math.min(1, d.t * 3), 0, Math.sin(d.t * 22) * 0.06);
@@ -156,6 +205,10 @@ export function createActors(scene, cfg = config) {
   /** @type {SmallDog|null} */
   let titleRunner = null;
   let wakeTitleDog = false;
+  /** rigged boss on the title screen; titleBossT = seconds since the start (-1 = not howling) */
+  let titleBoss = null, titleBossMixer = null, titleBossT = -1, titleBossClip = '';
+  /** @type {Record<string, THREE.AnimationAction>} */
+  let titleBossClips = {};
 
   function dropPack() {
     for (const d of pack) dropSmallDog(d);
@@ -181,7 +234,7 @@ export function createActors(scene, cfg = config) {
       const spot = caughtDogSpot(caughtIdx++, interp.x, laneW);
       d.x = ease(d.x, spot.x, 4);
       d.z = ease(d.z, kidZ + 0.6 + spot.back, 4); // the kid is pulled back 0.6 m
-      if (d.mode !== 'sit') { d.mode = 'sit'; d.t = 0; }
+      if (d.mode !== 'bark') { d.mode = 'bark'; d.t = 0; } // caught cutscene: they bark at him
     };
 
     // heel dogs follow their slot; one whose time ran out sits where it is and drops out of frame
@@ -245,6 +298,34 @@ export function createActors(scene, cfg = config) {
       if (packMode === 'giveup' && packT > 2) dropPack();
     }
 
+    // title (rigged boss): the boss sits in the soi staring at the kid; at the start it howls
+    // and is left behind, since it is the chaser. Without the rig: the old sleeping tan dog.
+    if (bossMixer) {
+      if (!titleBoss) {
+        titleBoss = new THREE.Group();
+        titleBoss.add(blob(1.3));
+        const body = cloneSkinned(boss);
+        body.rotation.y = -0.6;
+        body.scale.setScalar(BOSS_SCALE);
+        titleBoss.add(body);
+        titleBossMixer = new THREE.AnimationMixer(body);
+        titleBossClips = Object.fromEntries(boss.userData.animations.map((c) => [c.name, titleBossMixer.clipAction(c)]));
+        root.add(titleBoss);
+      }
+      if (titleDog) titleDog.visible = false;
+      if (wakeTitleDog) { wakeTitleDog = false; titleBossT = 0; }
+      if (world.phase === 'title') {
+        titleBossT = -1;
+        titleBoss.position.set(1.7, 0, kidZ - 2.2);
+      } else if (titleBossT >= 0) titleBossT += dt;
+      if (titleBossT > 3) titleBossT = -1;
+      titleBoss.visible = world.phase === 'title' || titleBossT >= 0;
+      if (titleBoss.visible) {
+        titleBossClip = fadeTo(titleBossClips, titleBossClip, titleBossT >= 0 && titleBossT < 2.3 ? 'Howl' : 'Sit');
+        titleBossMixer.update(dt);
+      }
+      return;
+    }
     // title: a sleeping dog beside the start; it wakes and runs off when the run starts
     if (!titleDog || titleDog.userData.src !== templates.dog) {
       // (re)made when the sleeping-dog GLB replaces its stand-in
@@ -311,15 +392,25 @@ export function createActors(scene, cfg = config) {
     lean += (Math.max(-0.35, Math.min(0.35, -vx * 0.025)) - lean) * Math.min(1, dt * 14);
     kidHolder.rotation.z = lean;
     jumpT += dt; landT += dt;
-    const clip = world.phase === 'title' || world.phase === 'caught' ? 'idle' : animationFor(p);
+    const caughtClip = kidClips.caught ? 'caught' : 'idle'; // Mixamo "Terrified" for the cutscene
+    const clip = world.phase === 'title' ? 'idle' : world.phase === 'caught' ? caughtClip : animationFor(p);
 
     if (kidMixer) {
-      const want = kidClips[clip] ? clip : 'run';
+      // stumble = a jogging stagger, not a fall (Pong: lying down felt wrong): the run clip,
+      // slowed, with the body pitched forward and wobbling side to side, settling by the end
+      const stumbling = clip === 'stumble';
+      const want = stumbling ? 'run' : kidClips[clip] ? clip : 'run';
       if (want !== kidClip && kidClips[want]) {
         kidClips[want].reset().fadeIn(0.15).play();
         if (kidClips[kidClip]) kidClips[kidClip].fadeOut(0.15);
         kidClip = want;
       }
+      // Sprint clip covers ~1.8 m per cycle at 1x (~3.4 m/s): follow the kid's speed
+      if (kidClips.run) kidClips.run.timeScale = stumbling ? 0.7 : Math.max(0.7, Math.min(1.8, p.speedMps / 5));
+      const left = stumbling && tumbleTotal > 0 ? p.stumbleT / tumbleTotal : 0; // 1 at the hit, 0 at the end
+      const pitch = 0.45 * left * left, roll = Math.sin(time * 13) * 0.18 * left;
+      kid.rotation.x += (pitch - kid.rotation.x) * Math.min(1, dt * 18);
+      kid.rotation.z += (roll - kid.rotation.z) * Math.min(1, dt * 18);
       kidMixer.update(dt);
       return;
     }
@@ -377,6 +468,7 @@ export function createActors(scene, cfg = config) {
   function syncChaser(world, interp, dt) {
     const ch = world.chaser;
     peekT = Math.max(0, peekT - dt);
+    howlT = Math.max(0, howlT - dt);
     const show = showChaser(world, peekT);
     chaserHolder.visible = show || peekIn > 0.01;
     redness += ((eyeColor(world) === 'red' ? 1 : 0) - redness) * Math.min(1, dt * 5);
@@ -398,6 +490,17 @@ export function createActors(scene, cfg = config) {
     chaserHolder.position.set(chaserX, 0, -interp.z + back + (caught ? 0.6 * lunge : 0));
     gallop = advanceGallop(gallop, caught ? 0 : Math.max(ch.speedMps, 4), dt);
     const pose = gallopPose(gallop);
+    if (bossMixer) {
+      // rigged: clips do the body, code only places it (caught: lunge in beside the kid)
+      bossClip = fadeTo(bossClips, bossClip, caught ? 'Bite' : howlT > 0 ? 'Howl' : peeking ? 'Bark' : 'Run');
+      if (bossClips.Run) bossClips.Run.timeScale = Math.max(ch.speedMps, 4) / 7;
+      bossMixer.update(dt);
+      bossPose.position.y = 0;
+      bossPose.rotation.set(0, 0, 0);
+      bossPose.scale.set(1, 1, 1);
+      chaserModel.rotation.y = Math.PI + (caught ? side * 0.6 * lunge : 0);
+      return;
+    }
     if (caught) {
       // rear up, teeth in the back of the shirt, tug side to side
       bossPose.position.y = 0.1 * lunge;
@@ -484,10 +587,10 @@ export function createActors(scene, cfg = config) {
     onEvent(name) {
       if (name === 'run-start') {
         phase = 0; peekT = 0; peekIn = 0;
-        wakeTitleDog = titleDog?.visible ?? false;
+        wakeTitleDog = titleBoss?.visible || (titleDog?.visible ?? false);
         clearSmallDogs();
       }
-      else if (name === 'chase-start') { packMode = 'intro'; packT = 0; }
+      else if (name === 'chase-start') { packMode = 'intro'; packT = 0; howlT = 1.2; }
       else if (name === 'chase-survived') {
         // in view: the pack gives up and lies down, one after another; out of view: just gone
         if (pack.some((d) => d.holder.visible)) { packMode = 'giveup'; packT = 0; for (const d of pack) d.t = -0.3 * d.i; }

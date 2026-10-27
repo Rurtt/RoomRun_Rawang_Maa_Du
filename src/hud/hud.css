@@ -117,11 +117,11 @@
   background: rgba(10, 4, 24, 0.75); border: calc(var(--u) * 0.5) solid #000; border-radius: calc(var(--u) * 2); padding: calc(var(--u) * 1.5); }
 #hud .qr canvas { width: calc(var(--u) * 16); height: calc(var(--u) * 16); border-radius: calc(var(--u) * 0.8); image-rendering: pixelated; }
 #hud .qr span { font-size: calc(var(--u) * 2.6); max-width: calc(var(--u) * 26); white-space: normal; }
-/* the caught screen waits so the dog's grab plays first (the video's hero moment) */
+/* the caught screen waits for the cutscene (camera swing, grab, barking) to play first */
 #hud .caught-screen { background: radial-gradient(ellipse at center, rgba(40, 0, 20, 0.2), rgba(20, 0, 10, 0.7));
-  animation: fadeIn 0.35s 0.9s both; }
+  animation: fadeIn 0.35s 1.8s both; }
 @keyframes fadeIn { from { opacity: 0; } }
-#hud .caught-screen .big { font-size: calc(var(--u) * 13); color: #ff4a5a; animation: slamIn 0.5s 0.9s cubic-bezier(.2, 1.6, .4, 1) both; }
+#hud .caught-screen .big { font-size: calc(var(--u) * 13); color: #ff4a5a; animation: slamIn 0.5s 1.8s cubic-bezier(.2, 1.6, .4, 1) both; }
 @keyframes slamIn { from { transform: scale(2.4); opacity: 0; } }
 #hud .caught-screen .stats { display: flex; gap: calc(var(--u) * 6); font-size: calc(var(--u) * 6); }
 #hud .caught-screen .stats .c { color: #ffd84d; }

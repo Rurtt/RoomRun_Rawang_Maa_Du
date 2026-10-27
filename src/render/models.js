@@ -6,8 +6,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { toonMaterial, addOutline, gradientMap } from './toon.js';
 
-/** Eye spots on public/models/bossdog.glb (measured in Blender, 2026-10-27; its head is turned a little). */
-export const BOSS_EYES = { x: -0.02, y: 0.545, z: 0.48, spread: 0.085 };
+/** Eye spots on public/models/bossdog.glb (Mesh2Motion rig, rest pose, 2026-10-28); they ride the Head bone. */
+export const BOSS_EYES = { x: 0, y: 0.53, z: 0.45, spread: 0.045, bone: 'Head' };
 
 /** Stand-in name -> GLB file name (design section 7). */
 const FILE_FOR = { kid: 'kid', bossdog: 'bossdog', dog: 'dog', jar: 'water_jar', cart: 'food_cart', tuktuk: 'tuk_tuk', coin: 'coin' };
@@ -81,14 +81,20 @@ function kid() {
  * Two glowing eye spheres on a dog's head (`at` in model space, metres).
  * Kept in userData.eyes, non-enumerable so Object3D.clone's JSON copy of userData skips them.
  * @param {THREE.Object3D} obj
- * @param {{ x?: number, y: number, z: number, spread: number }} at x = centre between the eyes (TRELLIS heads can be turned)
+ * @param {{ x?: number, y: number, z: number, spread: number, bone?: string }} at x = centre between the eyes (TRELLIS heads can be turned);
+ *   bone = rigged models: the eyes ride this bone (spots are given in the model's rest pose)
  */
 export function addEyes(obj, at) {
+  const bone = at.bone ? obj.getObjectByName(at.bone) : null;
+  if (bone) obj.updateMatrixWorld(true);
   const eyes = [-1, 1].map((s) => {
     const m = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffb020 }));
     m.name = 'eye';
     m.position.set((at.x ?? 0) + s * at.spread, at.y, at.z);
-    obj.add(m);
+    if (bone) {
+      bone.worldToLocal(obj.localToWorld(m.position));
+      bone.add(m);
+    } else obj.add(m);
     return m;
   });
   Object.defineProperty(obj.userData, 'eyes', { value: eyes, enumerable: false, configurable: true });
@@ -226,6 +232,7 @@ function toonify(root) {
     // emissive Blender parts (lamps, lit glass, neon) stay unlit and bright, like the stand-ins' glow parts
     if (old.emissive && old.emissive.getHex() !== 0) o.material = new THREE.MeshBasicMaterial({ color: old.emissive.clone().multiplyScalar(1.3) });
     else o.material = toonMaterial(color, { map: old.map || undefined });
+    if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); // Mesh2Motion exports have none
     if (o.isSkinnedMesh) o.frustumCulled = false;
     addOutline(o, 0.025);
   });

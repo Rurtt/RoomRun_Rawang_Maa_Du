@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import config from '../config.js';
 import { meterFill } from '../hud/format.js';
+import { chaserSide } from './chaserView.js';
 
 const BASE = { back: 5.6, up: 3.1, lookAhead: 8, lookUp: 1.3, fov: 66 };
 
@@ -17,6 +18,8 @@ export function createCameraRig(camera, cfg = config) {
   let sway = 0, swaySide = 1, bob = 0;
   let danger = 0, speedK = 0, caughtK = 0;
   let time = 0;
+  /** seconds into the caught cutscene */
+  let cutT = 0;
   const look = new THREE.Vector3();
 
   return {
@@ -52,6 +55,19 @@ export function createCameraRig(camera, cfg = config) {
       look.set(x * 0.4 + sway * 0.4, BASE.lookUp + interp.y * 0.5 + caughtK * 0.2, -interp.z - BASE.lookAhead * (1 - caughtK * 0.6));
       camera.lookAt(look);
       camera.rotateZ(sway * 0.12 + shake * 0.05 * n(29, 3));
+      cutT = world.phase === 'caught' ? cutT + dt : 0;
+      if (cutT > 0) {
+        // caught cutscene: swing round to a low, mostly-front view so the kid's scared face and the
+        // dog biting his shirt are both in frame. Swing toward the road's middle (side lanes:
+        // the other way runs into the shophouses), else away from the dog.
+        const k = Math.min(1, cutT / 0.9), s = k * k * (3 - 2 * k);
+        const a = s * 2.6, r = 4.4 - s * 1.6;
+        const kx = interp.x, kz = -interp.z + 0.6; // the kid is pulled back 0.6 m
+        const side = Math.abs(kx) > 0.5 ? -Math.sign(kx) : -chaserSide(kx);
+        const camX = Math.max(-3.5, Math.min(3.5, kx + side * Math.sin(a) * r));
+        camera.position.set(camX + shake * 0.2 * n(37, 1), 2.6 - s * 1.6, kz + Math.cos(a) * r);
+        camera.lookAt(kx, 0.75, kz);
+      }
       const fov = BASE.fov + speedK * 6 + pull * 4 - caughtK * 6;
       if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
     },
