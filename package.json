@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "phone": "node server/start.mjs"
   },
   "dependencies": {
     "@fontsource/kanit": "5.3.0",

@@ -105,6 +105,17 @@ window.addEventListener('keydown', (e) => {
   else if (action === 'panel') panel.toggle();
 });
 
+// Tunnel URL for the title-screen QR. Only exists while `npm run phone` runs;
+// poll until it shows up (cloudflared takes a few seconds).
+async function pollTunnelUrl() {
+  try {
+    const res = await fetch('/tunnel-url', { cache: 'no-store' });
+    if (res.ok && (res.headers.get('content-type') ?? '').includes('json')) extra.tunnelUrl = (await res.json()).url ?? null;
+  } catch { /* relay not running: keyboard only */ }
+  if (!extra.tunnelUrl) setTimeout(pollTunnelUrl, 2000);
+}
+pollTunnelUrl();
+
 const loop = createFixedLoop({ step, render, stepDt: config.loop.stepDt, maxFrameDt: config.loop.maxFrameDt });
 
 let last = performance.now();
