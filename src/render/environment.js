@@ -9,6 +9,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import strings from '../strings.js';
 import { createRng } from '../sim/rng.js';
+import { houseWidth } from './houses.js';
 import { MOOD } from './renderer.js';
 import { toonMaterial } from './toon.js';
 
@@ -439,8 +440,7 @@ function buildVariant(seed, kit) {
   for (const side of [-1, 1]) {
     let z = 0;
     while (z < SEG_LEN - 0.01) {
-      // the last house in a segment can be narrow; a kit module can't squeeze below ~3 m
-      const width = Math.min(SEG_LEN - z, 4.2 + r() * 1.6);
+      const width = houseWidth(SEG_LEN - z, r);
       if (kit?.ground_shop && width > 3) kitShophouse(b, kit, side, -z, width, r);
       else shophouse(b, side, -z, width, r);
       z += width;
