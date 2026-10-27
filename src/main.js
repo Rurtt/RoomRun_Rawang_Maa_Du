@@ -6,6 +6,9 @@ import { createFixedLoop } from './loop.js';
 import { createCadence } from './input/cadence.js';
 import { createInputHub } from './input/hub.js';
 import { createKeyboardSource } from './input/keyboard.js';
+import { createMotionDetector } from './input/motion.js';
+import { createPhoneSource } from './input/phoneSource.js';
+import { wsUrl } from './phone/protocol.js';
 import { createWorld, startRun, stepWorld, triggerChase } from './sim/world.js';
 import { createRenderer } from './render/renderer.js';
 import { createEnvironment } from './render/environment.js';
@@ -40,6 +43,9 @@ const hub = createInputHub();
 const keyboard = createKeyboardSource({ cadence: createCadence() });
 keyboard.attach(window);
 hub.add(keyboard);
+// phones through the relay (`npm run phone`); quietly retries while it isn't running
+const phone = createPhoneSource({ url: wsUrl(location), detector: createMotionDetector() });
+hub.add(phone);
 
 const world = createWorld(config);
 /** Player state before the latest step, for smooth rendering between steps. */
@@ -84,6 +90,7 @@ function render(alpha) {
   actors.sync(world, alpha, interp, renderDt);
   rig.update(world, renderDt, interp);
   effects.update(world, renderDt, interp);
+  extra.phoneLost = phone.everConnected && !phone.connected(performance.now());
   hud.update(world, extra);
   const running = world.phase === 'running';
   audio.setDanger(running ? meterFill(world.chaser.gap, config.chaser) : 0);
@@ -93,8 +100,8 @@ function render(alpha) {
 
 let timeScale = 1;
 
-/** Live numbers for the debug panel. rttMs is filled by the phone link (Task 11). */
-const stats = { fps: 0, rttMs: /** @type {Record<'L'|'R', number|null>} */ ({ L: null, R: null }) };
+/** Live numbers for the debug panel. */
+const stats = { fps: 0, rttMs: phone.rtt };
 const panel = createDebugPanel(config, stats);
 
 window.addEventListener('keydown', (e) => {
@@ -135,7 +142,7 @@ requestAnimationFrame(tick);
 // Dev-only handle for browser checks (Playwright) and console poking.
 if (import.meta.env.DEV) {
   window.soip = {
-    world, view, environment, actors, hud, audio, panel, stats, hub, keyboard, config, startRun, triggerChase,
+    world, view, environment, actors, hud, audio, panel, stats, hub, phone, keyboard, config, startRun, triggerChase,
     pause(on = true) { devPaused = on; },
     /** Step the sim `seconds` with a fixed input (lane/jump fire once), then draw one frame. */
     simulate(seconds, f = {}) {

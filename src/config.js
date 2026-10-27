@@ -15,6 +15,15 @@ export default {
            hitHalfDepth: 0.8, laneHitHalfWidth: 1.0, jumpClearHeight: 0.6, coinPickupDepth: 1.0 },
   // last ~1 s before a catch the game runs at slowMoScale (the grab reads on video)
   juice: { slowMoScale: 0.4, slowMoWindow: 1.0, slowMoMaxGap: 4 },
-  motion: { /* filled in Task 12 */ },
+  // Phone/stick arm-swing detection, m/s^2 with gravity removed. Tuned from logs (scripts/replay.mjs).
+  motion: {
+    axes: { vertical: 1, lateral: 0 },     // indexes into a = [x, y, z]
+    lateralSign: { L: 1, R: 1 },           // flip a hand whose phone is held the other way round
+    stepSign: 1,                           // count the swing end where vertical is this sign: one step per arm cycle per hand
+    stepThreshold: 6, stepRefractoryMs: 180,
+    jumpThreshold: 15, jumpWindowMs: 100,
+    swipeThreshold: 12, swipeWindowMs: 150, gestureCooldownMs: 350,
+    gestureHoldMs: 600, suppressStepsAfterGestureMs: 300,
+  },
   phone: { disconnectAfterMs: 1000 },
 };
