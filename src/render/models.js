@@ -7,7 +7,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { toonMaterial, addOutline, gradientMap } from './toon.js';
 
 /** Stand-in name -> GLB file name (design section 7). */
-const FILE_FOR = { kid: 'kid', ghost: 'ghost', dog: 'dog', jar: 'water_jar', cart: 'food_cart', tuktuk: 'tuk_tuk', coin: 'coin' };
+const FILE_FOR = { kid: 'kid', bossdog: 'bossdog', dog: 'dog', jar: 'water_jar', cart: 'food_cart', tuktuk: 'tuk_tuk', coin: 'coin' };
 
 /**
  * @param {{ airborne: boolean, stumbleT: number, speedMps: number }} player
@@ -74,28 +74,52 @@ function kid() {
   return g;
 }
 
-function ghost() {
+/**
+ * Two glowing eye spheres on a dog's head (`at` in model space, metres).
+ * Kept in userData.eyes, non-enumerable so Object3D.clone's JSON copy of userData skips them.
+ * @param {THREE.Object3D} obj
+ * @param {{ y: number, z: number, spread: number }} at
+ */
+export function addEyes(obj, at) {
+  const eyes = [-1, 1].map((s) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffb020 }));
+    m.name = 'eye';
+    m.position.set(s * at.spread, at.y, at.z);
+    obj.add(m);
+    return m;
+  });
+  Object.defineProperty(obj.userData, 'eyes', { value: eyes, enumerable: false, configurable: true });
+  return eyes;
+}
+
+/** Big black-and-tan soi dog mid-gallop: torn left ear, nose scar. Static legs; actors.js bobs it. */
+function bossdog() {
   const g = new THREE.Group();
-  const robe = new THREE.MeshToonMaterial({ color: 0xf4f4ff, emissive: 0x8a7cff, emissiveIntensity: 0.3, gradientMap: gradientMap() });
-  const hair = toonMaterial(0x0e0c14), dark = toonMaterial(0x111111), face = toonMaterial(0xe8f0ff);
-  const float = new THREE.Group(); g.add(float);
-  const pts = [[0, 1.75], [0.42, 1.68], [0.55, 1.25], [0.5, 0.65], [0.72, 0.12], [0.5, 0.18], [0.3, 0.05], [0.12, 0.16], [0, 0.1]]
-    .map(([a, b]) => new THREE.Vector2(a, b)).reverse(); // lathe wants bottom-to-top for outward faces
-  mesh(new THREE.LatheGeometry(pts, 20), robe, float, 0, 0, 0, 0.03);
-  mesh(new THREE.SphereGeometry(0.4, 18, 14), face, float, 0, 1.78, 0.04, 0.03);
-  // long black hair: cap plus a curtain down the back (what the camera mostly sees)
-  mesh(new THREE.SphereGeometry(0.43, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), hair, float, 0, 1.8, 0, 0.03);
-  mesh(new THREE.CylinderGeometry(0.42, 0.48, 0.6, 18, 1, true, Math.PI * 0.62, Math.PI * 0.76), hair, float, 0, 1.58, -0.02, 0.03);
-  for (const s of [-1, 1]) {
-    mesh(new THREE.CylinderGeometry(0.1, 0.16, 0.8, 10, 1, true), hair, float, s * 0.34, 1.45, 0.12, 0.02); // side locks framing the face
-    mesh(new THREE.SphereGeometry(0.075, 12, 10), dark, float, s * 0.14, 1.8, 0.4, 0).scale.set(1, 1.35, 0.6);
-    mesh(new THREE.SphereGeometry(0.022, 8, 6), toonMaterial(0xffffff), float, s * 0.14 + 0.02, 1.84, 0.44, 0);
-    const arm = mesh(new THREE.CapsuleGeometry(0.09, 0.55, 4, 10), robe, float, s * 0.45, 1.25, 0.35, 0.025);
-    arm.rotation.x = Math.PI / 2 - 0.35;
+  const black = toonMaterial(0x1c1a1c), tan = toonMaterial(0xc8843c), nose = toonMaterial(0x0c0c0c);
+  const scar = toonMaterial(0xd88a8a), tooth = toonMaterial(0xf4f0e0);
+  mesh(new THREE.CapsuleGeometry(0.22, 0.46, 4, 14), black, g, 0, 0.52, -0.04).rotation.x = Math.PI / 2;
+  mesh(new THREE.SphereGeometry(0.27, 16, 12), black, g, 0, 0.55, 0.2).scale.set(1.1, 1, 1);
+  mesh(new THREE.SphereGeometry(0.2, 12, 10), tan, g, 0, 0.42, 0.3, 0).scale.set(1, 0.8, 0.6); // tan chest
+  // running legs: front reach forward, back push back
+  for (const [x, z, r] of [[0.13, 0.26, -0.45], [-0.13, 0.2, -0.25], [0.13, -0.32, 0.45], [-0.13, -0.26, 0.3]]) {
+    const leg = mesh(new THREE.CapsuleGeometry(0.07, 0.28, 4, 8), tan, g, x, 0.25, z, 0.02);
+    leg.rotation.x = r;
   }
-  mesh(new THREE.TorusGeometry(0.05, 0.018, 6, 14), dark, float, 0, 1.64, 0.4, 0);
-  g.userData.robe = robe;
-  g.userData.float = float;
+  const tail = mesh(new THREE.CapsuleGeometry(0.045, 0.24, 4, 8), black, g, 0, 0.66, -0.34, 0.015);
+  tail.rotation.x = -0.9;
+  // head, low and forward: growling
+  mesh(new THREE.SphereGeometry(0.18, 14, 12), black, g, 0, 0.7, 0.4);
+  mesh(new THREE.BoxGeometry(0.15, 0.11, 0.15), tan, g, 0, 0.64, 0.55, 0.02);
+  mesh(new THREE.SphereGeometry(0.035, 8, 6), nose, g, 0, 0.68, 0.62, 0);
+  mesh(new THREE.BoxGeometry(0.012, 0.012, 0.06), scar, g, 0.03, 0.7, 0.58, 0).rotation.y = 0.6;
+  for (const s of [-1, 1]) {
+    mesh(new THREE.ConeGeometry(0.02, 0.04, 4), tooth, g, s * 0.035, 0.585, 0.6, 0).rotation.x = Math.PI;
+    mesh(new THREE.SphereGeometry(0.025, 6, 4), tan, g, s * 0.07, 0.8, 0.53, 0); // tan brow dots
+    const torn = s < 0;
+    const ear = mesh(new THREE.ConeGeometry(0.06, torn ? 0.08 : 0.16, 5), black, g, s * 0.11, torn ? 0.86 : 0.9, 0.36, 0.015);
+    ear.rotation.z = -s * 0.35;
+  }
+  addEyes(g, { y: 0.75, z: 0.54, spread: 0.07 });
   return g;
 }
 
@@ -169,10 +193,10 @@ function coin() {
   return g;
 }
 
-const BUILDERS = { kid, ghost, dog, jar, cart, tuktuk, coin };
+const BUILDERS = { kid, bossdog, dog, jar, cart, tuktuk, coin };
 
 /**
- * @param {'kid'|'ghost'|'dog'|'jar'|'cart'|'tuktuk'|'coin'} name
+ * @param {'kid'|'bossdog'|'dog'|'jar'|'cart'|'tuktuk'|'coin'} name
  * @returns {THREE.Object3D}
  */
 export function makeStandIn(name) {
@@ -232,5 +256,27 @@ export async function loadModel(name) {
   const obj = cloneSkinned(gltf.scene);
   obj.name = name;
   obj.userData.animations = gltf.animations;
+  return obj;
+}
+
+/**
+ * A smaller, tan copy of a dog for heel and pack dogs. Materials are cloned so the
+ * source keeps its look; textured parts drop the texture (a dark texture can't turn tan).
+ * @param {THREE.Object3D} src
+ * @param {{ scale: number, tint: number }} opts
+ */
+export function dogVariant(src, { scale, tint }) {
+  const obj = cloneSkinned(src);
+  const tan = new THREE.Color(tint);
+  const eyes = [];
+  obj.traverse((o) => {
+    if (!o.isMesh || o.name.endsWith('-outline')) return;
+    o.material = o.material.clone();
+    if (o.name === 'eye') { eyes.push(o); return; }
+    if (o.material.map) { o.material.map = null; o.material.color.copy(tan); o.material.needsUpdate = true; }
+    else o.material.color.lerp(tan, 0.7);
+  });
+  Object.defineProperty(obj.userData, 'eyes', { value: eyes, enumerable: false, configurable: true });
+  obj.scale.setScalar(scale);
   return obj;
 }

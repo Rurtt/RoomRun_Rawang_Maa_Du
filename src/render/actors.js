@@ -84,9 +84,9 @@ export function createActors(scene, cfg = config) {
   const ghostModel = new THREE.Group();
   ghostModel.rotation.y = Math.PI;
   ghostHolder.add(ghostModel);
-  let ghost = makeStandIn('ghost');
+  let ghost = makeStandIn('bossdog');
   ghostModel.add(ghost);
-  loadModel('ghost').then((m) => { if (!m.userData.standIn) { ghostModel.remove(ghost); ghost = m; ghostModel.add(ghost); } });
+  loadModel('bossdog').then((m) => { if (!m.userData.standIn) { ghostModel.remove(ghost); ghost = m; ghostModel.add(ghost); } });
   const calm = new THREE.Color(0xf4f4ff), angry = new THREE.Color(0xff3a4a);
   const calmGlow = new THREE.Color(0x8a7cff), angryGlow = new THREE.Color(0xff2030);
   let anger = 0;
