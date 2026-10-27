@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import * as THREE from 'three';
-import { animationFor, makeStandIn, dogVariant } from '../src/render/models.js';
+import { animationFor, makeStandIn, dogVariant, addEyes, BOSS_EYES } from '../src/render/models.js';
 
 test('animationFor', () => {
   expect(animationFor({ airborne: true, stumbleT: 0, speedMps: 5 })).toBe('jump');
@@ -49,4 +49,11 @@ test('dogVariant scales, tints, leaves source alone', () => {
   expect(firstColor(src).material.color.getHex()).toBe(before);
   expect(firstColor(v).material.color.getHex()).not.toBe(before);
   expect(firstColor(v).material).not.toBe(firstColor(src).material);
+});
+
+test('addEyes: optional x centre for a turned head; BOSS_EYES sits on the GLB head', () => {
+  const g = new THREE.Group();
+  const [l, r] = addEyes(g, { x: -0.02, y: 0.5, z: 0.4, spread: 0.08 });
+  expect(l.position.x).toBeCloseTo(-0.1); expect(r.position.x).toBeCloseTo(0.06);
+  expect(BOSS_EYES.y).toBeGreaterThan(0.4); expect(BOSS_EYES.z).toBeGreaterThan(0.4);
 });

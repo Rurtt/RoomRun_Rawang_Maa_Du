@@ -6,6 +6,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { toonMaterial, addOutline, gradientMap } from './toon.js';
 
+/** Eye spots on public/models/bossdog.glb (measured in Blender, 2026-10-27; its head is turned a little). */
+export const BOSS_EYES = { x: -0.02, y: 0.545, z: 0.48, spread: 0.085 };
+
 /** Stand-in name -> GLB file name (design section 7). */
 const FILE_FOR = { kid: 'kid', bossdog: 'bossdog', dog: 'dog', jar: 'water_jar', cart: 'food_cart', tuktuk: 'tuk_tuk', coin: 'coin' };
 
@@ -78,13 +81,13 @@ function kid() {
  * Two glowing eye spheres on a dog's head (`at` in model space, metres).
  * Kept in userData.eyes, non-enumerable so Object3D.clone's JSON copy of userData skips them.
  * @param {THREE.Object3D} obj
- * @param {{ y: number, z: number, spread: number }} at
+ * @param {{ x?: number, y: number, z: number, spread: number }} at x = centre between the eyes (TRELLIS heads can be turned)
  */
 export function addEyes(obj, at) {
   const eyes = [-1, 1].map((s) => {
     const m = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffb020 }));
     m.name = 'eye';
-    m.position.set(s * at.spread, at.y, at.z);
+    m.position.set((at.x ?? 0) + s * at.spread, at.y, at.z);
     obj.add(m);
     return m;
   });
