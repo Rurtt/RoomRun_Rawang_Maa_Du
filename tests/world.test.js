@@ -210,3 +210,54 @@ test('hit: stumble 1.5 s at 20% speed', () => {
   run(w, sprint, 0.2);
   expect(w.player.speedMps).toBeCloseTo(12, 5);
 });
+
+const KIND_TYPE = { dog: 'jump', jar: 'jump', cart: 'block', tuktuk: 'block' };
+let obsId = 100;
+const obs = (kind, z, lane = 0) => ({ id: obsId++, kind, type: KIND_TYPE[kind], lane, z, hit: false });
+
+test('hit raises hit then hit-<kind>', () => {
+  for (const kind of ['dog', 'jar', 'cart', 'tuktuk']) {
+    const w = createWorld(emptyCfg(), 1); startRun(w); w.track.obstacles.push(obs(kind, 5));
+    const { events } = runUntil(w, sprint, (e) => e.includes('hit'), 2);
+    const i = events.indexOf('hit');
+    expect(events[i + 1]).toBe('hit-' + kind);
+    expect(w.lastHit.kind).toBe(kind);
+  }
+});
+
+test('cart hit costs 10 coins', () => {
+  const w = createWorld(emptyCfg(), 1); startRun(w); w.coins = 25; w.track.obstacles.push(obs('cart', 5));
+  runUntil(w, sprint, (e) => e.includes('hit'), 2);
+  expect(w.coins).toBe(15);
+});
+
+test('cart hit never goes below 0', () => {
+  const w = createWorld(emptyCfg(), 1); startRun(w); w.coins = 4; w.track.obstacles.push(obs('cart', 5));
+  runUntil(w, sprint, (e) => e.includes('hit'), 2);
+  expect(w.coins).toBe(0);
+});
+
+test('tuk-tuk stuns 2 s', () => {
+  const w = createWorld(emptyCfg(), 1); startRun(w); w.track.obstacles.push(obs('tuktuk', 5));
+  runUntil(w, sprint, (e) => e.includes('hit'), 2);
+  expect(w.player.stumbleT).toBeCloseTo(2, 5);
+  run(w, sprint, 1.9); expect(w.player.speedMps).toBeCloseTo(2.4, 5);
+  run(w, sprint, 0.2); expect(w.player.speedMps).toBeCloseTo(12, 5);
+});
+
+test('second hit while stumbling keeps the longer stun', () => {
+  const w = createWorld(emptyCfg(), 1); startRun(w);
+  w.track.obstacles.push(obs('tuktuk', 5), obs('dog', 8));
+  let maxT = 0, hits = 0;
+  for (let t = 0; t < 4; t += DT) {
+    hits += count(stepWorld(w, sprint, DT), 'hit');
+    maxT = Math.max(maxT, w.player.stumbleT);
+  }
+  expect(hits).toBe(2); expect(maxT).toBeLessThanOrEqual(2 + 1e-9);
+});
+
+test('restart clears lastHit', () => {
+  const w = createWorld(emptyCfg(), 1); startRun(w); w.track.obstacles.push(obs('jar', 5));
+  runUntil(w, sprint, (e) => e.includes('hit'), 2); startRun(w);
+  expect(w.lastHit).toBeNull();
+});

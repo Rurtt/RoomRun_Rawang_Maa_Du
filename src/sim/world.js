@@ -3,7 +3,7 @@
 // and returns the names of what happened. Render, HUD and audio only read the
 // world and react to those event names.
 //
-// Events: 'run-start' 'lane' 'jump' 'land' 'coin' 'hit' 'chaser-near'
+// Events: 'run-start' 'lane' 'jump' 'land' 'coin' 'hit' 'hit-<kind>' 'chaser-near'
 //         'chase-warning' 'chase-start' 'chase-survived' 'caught'
 import config from '../config.js';
 import { createRng } from './rng.js';
@@ -31,6 +31,8 @@ export function createWorld(cfg = config, seed = Date.now()) {
     track: createTrack(cfg.track, rng),
     /** @type {{ distance: number, coins: number } | null} */
     lastRun: null,
+    /** @type {{ kind: string, distance: number } | null} latest obstacle hit, for effects */
+    lastHit: null,
     /** @type {string[]} events raised outside stepWorld (hotkeys), emitted on the next step */
     pending: [],
   };
@@ -54,6 +56,7 @@ export function startRun(world) {
   world.track = createTrack(cfg.track, world.rng);
   updateTrack(world.track, 0, 0);
   world.pending = [];
+  world.lastHit = null;
 }
 
 /** Start the chase event now (C key). Only while running and no event is on. */
@@ -132,14 +135,17 @@ export function stepWorld(world, input, dt) {
   const density = world.chase.phase === 'idle' ? 1 : cfg.chase.obstacleDensity;
   updateTrack(world.track, p.distance, world.runTime, density);
   const tc = cfg.track;
+  const fx = cfg.effects;
   for (const o of world.track.obstacles) {
     if (o.hit) continue;
     if (Math.abs(o.z - p.distance) >= tc.hitHalfDepth) continue;
     if (Math.abs(p.x - o.lane * pc.laneWidth) >= tc.laneHitHalfWidth) continue;
     if (o.type === 'jump' && p.y >= tc.jumpClearHeight) continue;
     o.hit = true;
-    p.stumbleT = pc.stumbleTime;
-    events.push('hit');
+    p.stumbleT = Math.max(p.stumbleT, o.kind === 'tuktuk' ? fx.tuktukStun : pc.stumbleTime);
+    if (o.kind === 'cart') world.coins = Math.max(0, world.coins - fx.cartCoinLoss);
+    world.lastHit = { kind: o.kind, distance: p.distance };
+    events.push('hit', `hit-${o.kind}`);
   }
   for (const c of world.track.coins) {
     if (c.taken) continue;
