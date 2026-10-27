@@ -6,6 +6,7 @@
 // Coordinates: sim distance d runs forward; Three.js z = -d. Lane x = lane * laneWidth.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import strings from '../strings.js';
 import { createRng } from '../sim/rng.js';
 import { MOOD } from './renderer.js';
@@ -84,12 +85,55 @@ function glowSpriteTexture() {
   return t;
 }
 
+// ---------------------------------------------------------------- Blender street kit
+// GLBs built by art/blender/*.py. Each named node becomes a kit part: plain
+// geometry pieces plus their material name/colour, merged into the segment
+// meshes like the code-built parts. A missing file keeps the code-built version.
+const KIT_FILES = ['shophouse', 'street_lamp', 'street_kit', 'food_cart'];
+/** Glow intensity per emissive material name (above ~1 blooms). */
+const KIT_GLOW = { lamp: 3.5, shoplight: 0.95, fridge_glass: 1.1, candle: 1.6, glass_lit: 0.95, bulb: 1.6 };
+
+/** @typedef {{ geo: THREE.BufferGeometry, name: string, color: number, emissive: number }} KitPiece */
+
+/** @returns {Promise<Record<string, KitPiece[]> | null>} parts by node name */
+async function loadKit() {
+  const loader = new GLTFLoader();
+  /** @type {Record<string, KitPiece[]>} */
+  const kit = {};
+  await Promise.all(KIT_FILES.map(async (file) => {
+    try {
+      const res = await fetch(`/models/${file}.glb`);
+      const buf = res.ok ? await res.arrayBuffer() : null;
+      // Vite answers a missing file with index.html: check the glTF magic first
+      if (!buf || buf.byteLength < 4 || new TextDecoder().decode(new Uint8Array(buf, 0, 4)) !== 'glTF') return;
+      const gltf = await loader.parseAsync(buf, '/models/');
+      gltf.scene.updateMatrixWorld(true);
+      gltf.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        // a multi-material node loads as a group of meshes named after the node
+        const node = o.parent && o.parent !== gltf.scene ? o.parent.name : o.name;
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', o.geometry.getAttribute('position'));
+        geo.setAttribute('normal', o.geometry.getAttribute('normal'));
+        geo.setIndex(o.geometry.getIndex());
+        geo.applyMatrix4(o.matrixWorld);
+        const m = o.material;
+        (kit[node] ??= []).push({ geo, name: m.name.replace(/^sp_/, ''), color: m.color.getHex(), emissive: m.emissive?.getHex() ?? 0 });
+      });
+    } catch (err) {
+      console.warn(`street kit ${file}: using code-built street (${err.message})`);
+    }
+  }));
+  return Object.keys(kit).length ? kit : null;
+}
+
 // ---------------------------------------------------------------- builder
 const tmpColor = new THREE.Color();
 const tmpMatrix = new THREE.Matrix4();
 const tmpQuat = new THREE.Quaternion();
 const tmpEuler = new THREE.Euler();
 const tmpPos = new THREE.Vector3();
+const tmpScale = new THREE.Vector3();
 const ONE = new THREE.Vector3(1, 1, 1);
 
 function place(geo, x, y, z, rx = 0, ry = 0, rz = 0) {
@@ -135,6 +179,22 @@ class Builder {
   }
   /** Polyline as line segments. */
   line(points) { for (let i = 1; i < points.length; i++) this.lines.push(points[i - 1], points[i]); return this; }
+  /**
+   * A Blender kit part (see loadKit), turned by ry and stretched sx along its local X.
+   * @param {KitPiece[]} part
+   * @param {{ facade?: number, awning?: number, windowLit?: boolean }} [look] per-house colours
+   */
+  kitPart(part, x, y, z, ry = 0, sx = 1, look = {}) {
+    tmpMatrix.compose(tmpPos.set(x, y, z), tmpQuat.setFromEuler(tmpEuler.set(0, ry, 0)), tmpScale.set(sx, 1, 1));
+    for (const p of part) {
+      const geo = p.geo.clone().applyMatrix4(tmpMatrix);
+      if (p.emissive) this.glow.push(paint(geo, p.name === 'lamp' ? MOOD.lamp : p.emissive, KIT_GLOW[p.name] ?? 1.2));
+      else if (p.name === 'window' && look.windowLit) this.glow.push(paint(geo, 0xffd9a0, 1.05));
+      else if (p.name.startsWith('flat_')) this.flat.push(paint(geo, p.color));
+      else this.add(geo, (p.name === 'facade' && look.facade) || (p.name === 'awning' && look.awning) || p.color);
+    }
+    return this;
+  }
 
   merge() {
     const m = (list) => (list.length ? mergeGeometries(list) : new THREE.BufferGeometry());
@@ -185,12 +245,7 @@ function shophouse(b, side, z0, width, r) {
     b.box(1.1, 0.06, sw, i % 2 ? 0xf4f4f4 : awn, fx + out * 0.5, 2.85, z0 - 0.25 - sw * (i + 0.5), 0, 0, side * 0.32);
   }
 
-  // facade board above the awning, text facing the road
-  const boardLen = Math.min(width - 0.8, 3.6);
-  const boardCell = Math.floor(r() * 16);
-  b.box(0.12, 0.95, boardLen + 0.12, 0x161022, fx + out * 0.08, 3.6, zc);
-  b.sign(boardLen, 0.8, { x: 1024, y: boardCell * BOARD.h, w: BOARD.w, h: BOARD.h }, boardIsNeon(boardCell) ? 1.45 : 0.9,
-    fx + out * 0.15, 3.6, zc, out > 0 ? Math.PI / 2 : -Math.PI / 2);
+  boardSign(b, side, zc, width, r);
 
   // upper-floor windows, AC units
   for (let f = 1; f < floors; f++) {
@@ -205,19 +260,62 @@ function shophouse(b, side, z0, width, r) {
     if (r() < 0.35) b.box(0.6, 0.08, width - 0.6, 0xb8b0c0, fx + out * 0.3, f * 3.2 + 0.1, zc); // small balcony ledge
   }
 
-  // blade sign sticking out over the sidewalk, facing the camera (+z)
-  if (r() < 0.7) {
-    const cell = Math.floor(r() * 16);
-    const y = 4.2 + r() * (H - 5.6);
-    const bx = fx + out * 1.05;
-    b.box(1.85, 0.98, 0.1, 0x161022, bx, y, zc + 0.02);
-    b.box(0.08, 0.08, 1.1, 0x555555, fx + out * 0.55, y + 0.5, zc + 0.02, 0, Math.PI / 2, 0);
-    b.sign(1.7, 0.85, { x: (cell % 2) * BLADE.w, y: Math.floor(cell / 2) * BLADE.h, w: BLADE.w, h: BLADE.h },
-      bladeIsNeon(cell) ? 1.55 : 0.9, bx, y, zc + 0.08);
-  }
+  if (r() < 0.7) bladeSign(b, side, zc + 0.02, 4.2 + r() * (H - 5.6), r);
+  if (r() < 0.45) waterTank(b, side, zc, width, H + 0.9, r);
+}
 
-  // roof water tank (blue plastic or steel)
-  if (r() < 0.45) b.cyl(0.55, 0.55, 1.2, 12, r() < 0.6 ? 0x3f7fd8 : 0xcfd2d8, side * (FRONT + 3), H + 0.9, zc + (r() - 0.5) * (width - 1.4));
+/** Facade board above the awning, text facing the road. */
+function boardSign(b, side, zc, width, r) {
+  const fx = side * FRONT, out = -side;
+  const boardLen = Math.min(width - 0.8, 3.6);
+  const boardCell = Math.floor(r() * 16);
+  b.box(0.12, 0.95, boardLen + 0.12, 0x161022, fx + out * 0.08, 3.6, zc);
+  b.sign(boardLen, 0.8, { x: 1024, y: boardCell * BOARD.h, w: BOARD.w, h: BOARD.h }, boardIsNeon(boardCell) ? 1.45 : 0.9,
+    fx + out * 0.15, 3.6, zc, out > 0 ? Math.PI / 2 : -Math.PI / 2);
+}
+
+/** Blade sign sticking out over the sidewalk, facing the camera (+z). */
+function bladeSign(b, side, z, y, r) {
+  const fx = side * FRONT, out = -side;
+  const cell = Math.floor(r() * 16);
+  const bx = fx + out * 1.05;
+  b.box(1.85, 0.98, 0.1, 0x161022, bx, y, z);
+  b.box(0.08, 0.08, 1.1, 0x555555, fx + out * 0.55, y + 0.5, z, 0, Math.PI / 2, 0);
+  b.sign(1.7, 0.85, { x: (cell % 2) * BLADE.w, y: Math.floor(cell / 2) * BLADE.h, w: BLADE.w, h: BLADE.h },
+    bladeIsNeon(cell) ? 1.55 : 0.9, bx, y, z + 0.06);
+}
+
+/** Roof water tank (blue plastic or steel), centre height y. */
+function waterTank(b, side, zc, width, y, r) {
+  b.cyl(0.55, 0.55, 1.2, 12, r() < 0.6 ? 0x3f7fd8 : 0xcfd2d8, side * (FRONT + 3), y, zc + (r() - 0.5) * (width - 1.4));
+}
+
+/**
+ * Shophouse stacked from Blender modules (art/blender/shophouse.py): ground floor,
+ * 1-2 upper floors, roof. Modules are 4.8 m wide, stretched to the house width.
+ */
+function kitShophouse(b, kit, side, z0, width, r) {
+  const zc = z0 - width / 2;
+  const floors = 2 + (r() < 0.55 ? 1 : 0);
+  const look = { facade: FACADES[Math.floor(r() * FACADES.length)], awning: AWNINGS[Math.floor(r() * AWNINGS.length)], windowLit: false };
+  const fx = side * FRONT;
+  const ry = -side * Math.PI / 2; // module front (+z) turns to face the road
+  const sx = (width - 0.06) / 4.8;
+  b.kitPart(kit[r() < 0.5 ? 'ground_shop' : 'ground_shutter'], fx, 0, zc, ry, sx, look);
+  let balconyAbove = false;
+  for (let f = 1; f < floors; f++) {
+    look.windowLit = r() < 0.45;
+    const balcony = r() < 0.4;
+    if (f === 1) balconyAbove = balcony;
+    b.kitPart(kit[balcony ? 'upper_b' : 'upper_a'], fx, f * 3.2, zc, ry, sx, look);
+  }
+  const shed = r() < 0.4;
+  b.kitPart(kit[shed ? 'roof_b' : 'roof_a'], fx, floors * 3.2, zc, ry, sx, look);
+  // upper_a keeps its bottom 0.95 m clear for the board; a balcony takes that spot instead
+  if (!balconyAbove) boardSign(b, side, zc, width, r);
+  // blade sign at the near party wall, clear of balconies and window canopies
+  if (r() < 0.7) bladeSign(b, side, z0 - 0.08, 4.4 + r() * ((floors - 1) * 3.2 - 1.6), r);
+  if (!shed && r() < 0.45) waterTank(b, side, zc, width, floors * 3.2 + 1.2, r);
 }
 
 function foodCart(b, x, z, ry, r) {
@@ -248,9 +346,14 @@ function plant(b, x, z, r) {
 }
 
 /** Concrete power pole with a street lamp; returns the lamp head position. */
-function pole(b, side, z, r) {
+function pole(b, side, z, r, kit) {
   const x = side * (ROAD_HALF + 0.35);
   const out = -side;
+  if (kit?.lamp) {
+    // kit lamp arm points along +x: turn it toward the road
+    b.kitPart(kit[r() < 0.35 && kit.lamp_tx ? 'lamp_tx' : 'lamp'], x, 0, z, out > 0 ? 0 : Math.PI);
+    return new THREE.Vector3(x + out * 1.45, 6.2, z);
+  }
   b.box(0.3, 8.6, 0.3, 0xa09aa8, x, 4.3, z);
   b.box(0.1, 0.1, 1.5, 0x8a8494, x, 7.9, z, 0, Math.PI / 2, 0);
   b.box(1.5, 0.1, 0.1, 0x6a6a72, x + out * 0.75, 6.45, z);
@@ -278,15 +381,21 @@ function wires(b, side, zFrom, zTo, count, r) {
   }
 }
 
-function buildVariant(seed) {
+/**
+ * @param {number} seed
+ * @param {Record<string, KitPiece[]> | null} kit Blender parts; null = all code-built
+ */
+function buildVariant(seed, kit) {
   const r = createRng(seed);
   const b = new Builder();
   road(b);
   for (const side of [-1, 1]) {
     let z = 0;
     while (z < SEG_LEN - 0.01) {
+      // the last house in a segment can be narrow; a kit module can't squeeze below ~3 m
       const width = Math.min(SEG_LEN - z, 4.2 + r() * 1.6);
-      shophouse(b, side, -z, width, r);
+      if (kit?.ground_shop && width > 3) kitShophouse(b, kit, side, -z, width, r);
+      else shophouse(b, side, -z, width, r);
       z += width;
     }
   }
@@ -294,7 +403,7 @@ function buildVariant(seed) {
   for (let k = 0; k < 3; k++) {
     const zl = -(2 + k * LAMP_EVERY);
     const zr = -(2 + LAMP_EVERY / 2 + k * LAMP_EVERY);
-    b.lamps.push(pole(b, -1, zl, r), pole(b, 1, zr, r));
+    b.lamps.push(pole(b, -1, zl, r, kit), pole(b, 1, zr, r, kit));
     wires(b, -1, zl, zl - LAMP_EVERY, 6, r);
     wires(b, 1, zr, zr - LAMP_EVERY, 3, r);
   }
@@ -309,9 +418,19 @@ function buildVariant(seed) {
     let z = 4 + r() * 4;
     while (z < SEG_LEN - 3) {
       const pick = r();
-      if (pick < 0.25) foodCart(b, x, -z, side > 0 ? -Math.PI / 2 : Math.PI / 2, r);
-      else if (pick < 0.55) scooter(b, x, -z, r);
-      else if (pick < 0.8) plant(b, side * (FRONT - 0.35), -z, r);
+      const toRoad = side > 0 ? -Math.PI / 2 : Math.PI / 2; // turns a part's +z front to face the road
+      if (pick < 0.25) {
+        if (kit?.food_cart) {
+          b.kitPart(kit.food_cart, x, 0, -z, toRoad);
+          if (kit.stools && r() < 0.6) b.kitPart(kit.stools, x + side * 0.1, 0, -z - 1.9, r() * Math.PI);
+        } else foodCart(b, x, -z, toRoad, r);
+      } else if (pick < 0.55) {
+        if (kit?.scooter) b.kitPart(kit.scooter, x, 0, -z, r() < 0.5 ? 0 : Math.PI);
+        else scooter(b, x, -z, r);
+      } else if (pick < 0.8) {
+        if (kit?.pots) b.kitPart(kit.pots, side * (FRONT - 0.4), 0, -z, toRoad);
+        else plant(b, side * (FRONT - 0.35), -z, r);
+      } else if (pick < 0.9 && kit?.spirit_house) b.kitPart(kit.spirit_house, side * (FRONT - 0.5), 0, -z, toRoad);
       z += 5 + r() * 7;
     }
   }
@@ -333,7 +452,8 @@ export function createEnvironment(scene) {
   // redraw once Kanit has loaded so the signs use the game font
   document.fonts?.load('800 64px Kanit').then(() => { drawAtlas(atlasCanvas); atlas.needsUpdate = true; }).catch(() => {});
 
-  const variants = Array.from({ length: VARIANTS }, (_, i) => buildVariant(1000 + i * 7919));
+  const seeds = Array.from({ length: VARIANTS }, (_, i) => 1000 + i * 7919);
+  let variants = seeds.map((s) => buildVariant(s, null));
 
   const mats = {
     toon: toonMaterial(0xffffff, { vertexColors: true }),
@@ -394,6 +514,15 @@ export function createEnvironment(scene) {
     slots.forEach((slot, k) => { placeSlot(slot, first + k * SEG_LEN); setVariant(slot, variants[k % VARIANTS]); });
   }
   layout(0);
+
+  // rebuild the variants from the Blender kit once it loads; slots keep their spot
+  loadKit().then((kit) => {
+    if (!kit) return;
+    const old = variants;
+    variants = seeds.map((s) => buildVariant(s, kit));
+    for (const slot of slots) setVariant(slot, variants[old.indexOf(slot.variant)]);
+    for (const v of old) for (const key of ['toon', 'flat', 'glow', 'signs', 'lines']) v[key].dispose();
+  });
 
   let lastZ = 0;
   const candidates = [];
