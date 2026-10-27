@@ -55,9 +55,12 @@ export function createActors(scene, cfg = config) {
   // ---- templates: stand-ins now, swapped for GLBs if they load
   /** @type {Record<string, THREE.Object3D>} */
   const templates = {};
+  // the sleeping dog GLB is only 0.8 m long and 0.36 m high: too small to read from the follow camera
+  const GROW = { dog: 1.6 };
+  const grown = (name, m) => { m.scale.multiplyScalar(GROW[name] ?? 1); return m; };
   for (const name of [...KINDS, 'coin']) {
-    templates[name] = makeStandIn(/** @type {any} */ (name));
-    loadModel(name).then((m) => { if (!m.userData.standIn) templates[name] = m; });
+    templates[name] = grown(name, makeStandIn(/** @type {any} */ (name)));
+    loadModel(name).then((m) => { if (!m.userData.standIn) templates[name] = grown(name, m); });
   }
 
   // ---- kid
