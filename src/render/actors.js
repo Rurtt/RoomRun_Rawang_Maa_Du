@@ -234,8 +234,11 @@ export function createActors(scene, cfg = config) {
     }
 
     // title: a sleeping dog beside the start; it wakes and runs off when the run starts
-    if (!titleDog) {
+    if (!titleDog || titleDog.userData.src !== templates.dog) {
+      // (re)made when the sleeping-dog GLB replaces its stand-in
+      if (titleDog) root.remove(titleDog);
       titleDog = templates.dog.clone();
+      titleDog.userData.src = templates.dog;
       titleDog.rotation.y = -0.6;
       root.add(titleDog);
     }

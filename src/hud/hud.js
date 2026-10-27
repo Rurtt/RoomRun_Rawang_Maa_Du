@@ -5,8 +5,12 @@ import './hud.css';
 import config from '../config.js';
 import strings from '../strings.js';
 import { formatMeters, meterFill, chaseSeconds } from './format.js';
+import { eyeColor } from '../render/chaserView.js';
 
-const GHOST_FACE = '<div class="ghost-face"><b></b><b></b></div>';
+/** Boss dog face (CSS only): dark head, torn left ear, amber eyes (red when close), tan muzzle. */
+const DOG_FACE = '<div class="dog-face"><i class="ear l"></i><i class="ear r"></i><b></b><b></b><s></s></div>';
+/** A small tan dog face per heel dog. */
+const HEEL_FACE = '<div class="dog-face heel"><i class="ear l"></i><i class="ear r"></i><b></b><b></b><s></s></div>';
 
 /**
  * @param {HTMLElement} root
@@ -18,14 +22,15 @@ export function createHud(root, cfg = config) {
     <div class="play">
       <div class="txt distance"></div>
       <div class="txt coins"><i></i><span></span></div>
-      <div class="meter"><div class="fill"></div><div class="face">${GHOST_FACE}</div></div>
+      <div class="meter"><div class="fill"></div><div class="face">${DOG_FACE}</div></div>
+      <div class="heel-icons"></div>
       <div class="txt gap"></div>
       <div class="txt banner hidden"></div>
       <div class="txt count hidden"></div>
     </div>
     <div class="txt phone-lost hidden"></div>
     <div class="screen title-screen">
-      <div class="txt name"></div>
+      <div class="gate-sign"><span class="name"></span></div>
       <div class="txt prompt"></div>
       <div class="txt alt hidden"></div>
       <div class="qr hidden"><canvas></canvas><span class="txt"></span></div>
@@ -38,7 +43,7 @@ export function createHud(root, cfg = config) {
   const $ = (sel) => /** @type {HTMLElement} */ (root.querySelector(sel));
   const el = {
     play: $('.play'), distance: $('.distance'), coins: $('.coins'), coinsN: $('.coins span'),
-    meter: $('.meter'), fill: $('.meter .fill'), face: $('.meter .face'), faceIcon: $('.meter .ghost-face'), gap: $('.gap'),
+    meter: $('.meter'), fill: $('.meter .fill'), face: $('.meter .face'), faceIcon: $('.meter .dog-face'), gap: $('.gap'), heel: $('.heel-icons'),
     banner: $('.banner'), count: $('.count'), phoneLost: $('.phone-lost'),
     title: $('.title-screen'), alt: $('.title-screen .alt'), qr: $('.qr'), qrCanvas: /** @type {HTMLCanvasElement} */ ($('.qr canvas')),
     caught: $('.caught-screen'), caughtD: $('.caught-screen .d'), caughtC: $('.caught-screen .c'),
@@ -83,7 +88,9 @@ export function createHud(root, cfg = config) {
       text(el.gap, strings.gap(Math.round(world.chaser.gap)));
       cls(el.meter, 'danger', running && fill > 0.7);
       cls(el.meter, 'chase', world.chase.phase === 'active');
-      cls(el.faceIcon, 'angry', world.chaser.angry);
+      cls(el.faceIcon, 'angry', eyeColor(world) === 'red');
+      const heelN = world.phase === 'title' ? 0 : world.heelDogs.length;
+      if (last.get('heel') !== heelN) { last.set('heel', heelN); el.heel.innerHTML = HEEL_FACE.repeat(heelN); }
 
       // chase banner + countdown
       const chase = world.chase.phase;
