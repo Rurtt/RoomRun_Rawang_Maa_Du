@@ -223,7 +223,9 @@ function toonify(root) {
     if (!o.isMesh || o.name.endsWith('-outline')) return;
     const old = o.material;
     const color = old.color ? old.color.getHex() : 0xffffff;
-    o.material = toonMaterial(color, { map: old.map || undefined });
+    // emissive Blender parts (lamps, lit glass, neon) stay unlit and bright, like the stand-ins' glow parts
+    if (old.emissive && old.emissive.getHex() !== 0) o.material = new THREE.MeshBasicMaterial({ color: old.emissive.clone().multiplyScalar(1.3) });
+    else o.material = toonMaterial(color, { map: old.map || undefined });
     if (o.isSkinnedMesh) o.frustumCulled = false;
     addOutline(o, 0.025);
   });
