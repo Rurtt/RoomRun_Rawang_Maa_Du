@@ -9,7 +9,7 @@ export default {
             startSpeedThreshold: 0.2 },
   chaser: { speed: 6, startGap: 20, maxGap: 50, visibleGap: 12, meterRange: 30 },
   chase: { warningTime: 3, activeTime: 30, speedMultiplier: 1.4, firstAt: 60, every: 90,
-           rewardCoins: 50, rewardGap: 15 },
+           rewardCoins: 50, rewardGap: 15, obstacleDensity: 0.5 },
   track: { spawnAhead: 120, despawnBehind: 20, startClear: 30, minRowSpacing: 14, maxRowSpacing: 26,
            singleOnlyUntil: 60, coinRowLength: 5, coinSpacing: 2, coinRowChance: 0.6,
            hitHalfDepth: 0.8, laneHitHalfWidth: 1.0, jumpClearHeight: 0.6, coinPickupDepth: 1.0 },
