@@ -14,6 +14,8 @@ import { createCameraRig } from './render/cameraRig.js';
 import { createEffects } from './render/effects.js';
 import { slowMoTarget } from './render/timeScale.js';
 import { createHud } from './hud/hud.js';
+import { meterFill } from './hud/format.js';
+import { createAudio, soundForEvent } from './audio/audio.js';
 
 document.title = config.title;
 
@@ -28,6 +30,9 @@ const effects = createEffects(view.scene, overlay);
 const hudRoot = document.createElement('div');
 document.body.append(hudRoot);
 const hud = createHud(hudRoot);
+const audio = createAudio();
+// browsers only allow sound after a user gesture
+for (const type of ['keydown', 'pointerdown']) window.addEventListener(type, () => audio.unlock(), { once: true });
 
 const hub = createInputHub();
 const keyboard = createKeyboardSource({ cadence: createCadence() });
@@ -46,6 +51,8 @@ function emit(events) {
     rig.onEvent(e);
     effects.onEvent(e);
     hud.onEvent(e);
+    const sound = soundForEvent(e);
+    if (sound) audio.play(sound);
   }
 }
 
@@ -55,6 +62,7 @@ function step(dt) {
   const input = hub.read(performance.now());
   actors.onSteps(input.steps);
   rig.onSteps(input.steps);
+  for (let i = 0; i < Math.min(input.steps, 2); i++) audio.play('step');
   emit(stepWorld(world, input, dt));
 }
 
@@ -75,6 +83,9 @@ function render(alpha) {
   rig.update(world, renderDt, interp);
   effects.update(world, renderDt, interp);
   hud.update(world, extra);
+  const running = world.phase === 'running';
+  audio.setDanger(running ? meterFill(world.chaser.gap, config.chaser) : 0);
+  audio.setChase(running && world.chase.phase === 'active');
   view.render();
 }
 
@@ -112,7 +123,7 @@ requestAnimationFrame(tick);
 // Dev-only handle for browser checks (Playwright) and console poking.
 if (import.meta.env.DEV) {
   window.soip = {
-    world, view, environment, actors, hud, hub, keyboard, config, startRun, triggerChase,
+    world, view, environment, actors, hud, audio, hub, keyboard, config, startRun, triggerChase,
     pause(on = true) { devPaused = on; },
     /** Step the sim `seconds` with a fixed input (lane/jump fire once), then draw one frame. */
     simulate(seconds, f = {}) {
