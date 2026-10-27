@@ -4,13 +4,17 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { toonMaterial, addOutline, gradientMap } from './toon.js';
+import { toonMaterial, addOutline, gradientMap, withRim } from './toon.js';
 
-/** Eye spots on public/models/bossdog.glb (Mesh2Motion rig, rest pose, 2026-10-28); they ride the Head bone. */
-export const BOSS_EYES = { x: 0, y: 0.53, z: 0.45, spread: 0.045, bone: 'Head' };
+/** Eye spots on public/models/bossdog_v2.glb (art/blender/bossdog.py, rest pose); they ride the Head bone. */
+export const BOSS_EYES = { x: 0, y: 0.6, z: 0.56, spread: 0.058, bone: 'Head' };
 
 /** Stand-in name -> GLB file name (design section 7). */
-const FILE_FOR = { kid: 'kid', bossdog: 'bossdog', dog: 'dog', jar: 'water_jar', cart: 'food_cart', tuktuk: 'tuk_tuk', coin: 'coin' };
+const FILE_FOR = { kid: 'kid_v2', bossdog: 'bossdog_v2', dog: 'dog', jar: 'water_jar', cart: 'food_cart', tuktuk: 'tuk_tuk', coin: 'coin' };
+/** Models that get the character look: rim, light floor, outline (props and the street don't). */
+const CHARACTERS = new Set(['kid', 'bossdog', 'dog']);
+/** Outline on characters, CSS pixels on screen (see outlineMaterial). */
+export const CHARACTER_OUTLINE = 2.5;
 
 /**
  * @param {{ airborne: boolean, stumbleT: number, speedMps: number }} player
@@ -25,10 +29,11 @@ export function animationFor(player) {
 
 // ---------------------------------------------------------------- stand-ins
 
+/** `outline`: 0 = none; any other value gets the standard screen-space line. */
 function mesh(geo, mat, parent, x = 0, y = 0, z = 0, outline = 0.025) {
   const m = new THREE.Mesh(geo, mat);
   m.position.set(x, y, z);
-  if (outline) addOutline(m, outline);
+  if (outline) addOutline(m);
   parent.add(m);
   return m;
 }
@@ -223,18 +228,25 @@ const loader = new GLTFLoader();
 /** @type {Map<string, Promise<{ scene: THREE.Object3D, animations: THREE.AnimationClip[] } | null>>} */
 const gltfCache = new Map();
 
-/** Re-skin a loaded model with the shared toon look and outlines. */
-function toonify(root) {
+/**
+ * Re-skin a loaded model with the shared toon look and outlines.
+ * @param {THREE.Object3D} root
+ * @param {boolean} rim characters: add the neon rim (own material copy, the toon cache stays plain)
+ */
+function toonify(root, rim) {
   root.traverse((o) => {
     if (!o.isMesh || o.name.endsWith('-outline')) return;
     const old = o.material;
     const color = old.color ? old.color.getHex() : 0xffffff;
     // emissive Blender parts (lamps, lit glass, neon) stay unlit and bright, like the stand-ins' glow parts
     if (old.emissive && old.emissive.getHex() !== 0) o.material = new THREE.MeshBasicMaterial({ color: old.emissive.clone().multiplyScalar(1.3) });
-    else o.material = toonMaterial(color, { map: old.map || undefined });
+    else if (rim) {
+      o.material = withRim(toonMaterial(color, { map: old.map || undefined }).clone());
+      o.material.name = old.name; // dogVariant recolours sp_coat / sp_tan by name
+    } else o.material = toonMaterial(color, { map: old.map || undefined });
     if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); // Mesh2Motion exports have none
     if (o.isSkinnedMesh) o.frustumCulled = false;
-    addOutline(o, 0.025);
+    if (rim && !old.name.includes('flat_')) addOutline(o, CHARACTER_OUTLINE); // characters only; face details stay clean
   });
 }
 
@@ -250,7 +262,7 @@ function fetchGltf(name) {
       })
       .then((gltf) => {
         if (!gltf) return null;
-        toonify(gltf.scene);
+        toonify(gltf.scene, CHARACTERS.has(name));
         return { scene: gltf.scene, animations: gltf.animations };
       })
       .catch((err) => { console.warn(`model ${name}: using stand-in (${err.message})`); return null; }));
@@ -271,9 +283,47 @@ export async function loadModel(name) {
   return obj;
 }
 
+/** Small dogs' light parts (the boss's tan): cream, so the tan coat still has markings. */
+const SMALL_DOG_LIGHT = [242, 214, 160];
+const swappedMaps = new Map();
+
+/**
+ * The boss's flat-colour texture (art/flatten_textures.py) with its black coat turned `tint`
+ * and its tan turned cream; pink (nose, scar) stays. One copy per map + tint.
+ * @param {THREE.Texture} map
+ * @param {number} tint
+ * @returns {THREE.Texture|null} null when there is no image to read (tests, stand-ins)
+ */
+function tanCoat(map, tint) {
+  const key = `${map.uuid}|${tint}`;
+  if (swappedMaps.has(key)) return swappedMaps.get(key);
+  const img = map.image;
+  if (typeof document === 'undefined' || !img || !img.width) return null;
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0);
+  const px = g.getImageData(0, 0, c.width, c.height);
+  const d = px.data;
+  const tan = [(tint >> 16) & 255, (tint >> 8) & 255, tint & 255]; // sRGB, like the texture
+  for (let i = 0; i < d.length; i += 4) {
+    const [r, gr, b] = [d[i], d[i + 1], d[i + 2]];
+    if (r - gr > 70 && r - b > 70 && gr < 140) continue; // pink
+    const to = r + gr + b < 240 ? tan : SMALL_DOG_LIGHT;
+    d[i] = to[0]; d[i + 1] = to[1]; d[i + 2] = to[2];
+  }
+  g.putImageData(px, 0, 0);
+  const tex = map.clone(); // keeps flipY, colour space and sampler of the GLB texture
+  tex.source = new THREE.TextureSource(c); // clones share their Source: setting .image would repaint the boss too
+  tex.needsUpdate = true;
+  swappedMaps.set(key, tex);
+  return tex;
+}
+
 /**
  * A smaller, tan copy of a dog for heel and pack dogs. Materials are cloned so the
- * source keeps its look; textured parts drop the texture (a dark texture can't turn tan).
+ * source keeps its look; the coat turns `tint` and the tan markings cream: by material
+ * name on the Blender dog (sp_coat / sp_tan), by repainting a textured coat, or plain tan.
  * @param {THREE.Object3D} src
  * @param {{ scale: number, tint: number }} opts
  */
@@ -285,8 +335,15 @@ export function dogVariant(src, { scale, tint }) {
     if (!o.isMesh || o.name.endsWith('-outline')) return;
     o.material = o.material.clone();
     if (o.name === 'eye') { eyes.push(o); return; }
-    if (o.material.map) { o.material.map = null; o.material.color.copy(tan); o.material.needsUpdate = true; }
-    else o.material.color.lerp(tan, 0.7);
+    if (o.material.userData.rim) withRim(o.material);
+    if (o.material.name === 'sp_coat') o.material.color.copy(tan);
+    else if (o.material.name === 'sp_tan') o.material.color.setRGB(...SMALL_DOG_LIGHT.map((c) => c / 255), THREE.SRGBColorSpace);
+    else if (o.material.map) {
+      const coat = tanCoat(o.material.map, tint);
+      o.material.map = coat;
+      if (coat) o.material.color.set(0xffffff); else o.material.color.copy(tan);
+      o.material.needsUpdate = true;
+    } else if (!o.material.name.startsWith('sp_')) o.material.color.lerp(tan, 0.7); // stand-in
   });
   Object.defineProperty(obj.userData, 'eyes', { value: eyes, enumerable: false, configurable: true });
   obj.scale.setScalar(scale);

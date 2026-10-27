@@ -5,6 +5,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import config from '../config.js';
 import { animationFor, loadModel, makeStandIn, addEyes, dogVariant, BOSS_EYES } from './models.js';
 import { advanceGallop, gallopPose } from './dogPose.js';
+import { jumpSquash, runBob } from './juice.js';
 import { chaserBack, showChaser, eyeColor, heelSlot, chaserSide, caughtDogSpot } from './chaserView.js';
 
 const KINDS = ['dog', 'jar', 'cart', 'tuktuk'];
@@ -116,6 +117,8 @@ export function createActors(scene, cfg = config) {
       bossClips = Object.fromEntries(clips.map((c) => [c.name, bossMixer.clipAction(c)]));
     }
   });
+  /** 0..1 through a playing clip. */
+  const clipFrac = (action) => action.time / action.getClip().duration;
   /** Cross-fade one dog's mixer to a clip (missing clip: keep what plays). */
   function fadeTo(clips, from, to) {
     if (to === from || !clips[to]) return from;
@@ -167,8 +170,10 @@ export function createActors(scene, cfg = config) {
       d.clips.Run.timeScale = Math.max(speedMps, 3) / 7;
       d.mixer.update(dt);
       const k = d.mode === 'lie' ? Math.min(1, d.t * 2) : 0;
-      d.pose.position.y = 0;
-      d.pose.rotation.set(0, 0, 0);
+      // running: a bound per clip loop on top of the clip
+      const r = d.clip === 'Run' ? runBob(clipFrac(d.clips.Run)) : { bob: 0, pitch: 0 };
+      d.pose.position.y = r.bob;
+      d.pose.rotation.set(r.pitch, 0, 0);
       d.pose.scale.set(1 + 0.15 * k, 1 - 0.4 * k, 1);
       return;
     }
@@ -377,7 +382,7 @@ export function createActors(scene, cfg = config) {
   let tumbleTotal = 0;
   const seen = new Set();
 
-  let lastX = 0, lean = 0, jumpT = 1, landT = 1;
+  let lastX = 0, lean = 0, yaw = 0, jumpT = 1, landT = 1;
   function syncKid(world, interp, dt) {
     const p = world.player;
     // caught: the dog has the shirt and pulls the kid back, tipping him backwards
@@ -392,6 +397,7 @@ export function createActors(scene, cfg = config) {
     lean += (Math.max(-0.35, Math.min(0.35, -vx * 0.025)) - lean) * Math.min(1, dt * 14);
     kidHolder.rotation.z = lean;
     jumpT += dt; landT += dt;
+    stepKick = Math.max(0, stepKick - dt * 6);
     const caughtClip = kidClips.caught ? 'caught' : 'idle'; // Mixamo "Terrified" for the cutscene
     const clip = world.phase === 'title' ? 'idle' : world.phase === 'caught' ? caughtClip : animationFor(p);
 
@@ -408,9 +414,16 @@ export function createActors(scene, cfg = config) {
       // Sprint clip covers ~1.8 m per cycle at 1x (~3.4 m/s): follow the kid's speed
       if (kidClips.run) kidClips.run.timeScale = stumbling ? 0.7 : Math.max(0.7, Math.min(1.8, p.speedMps / 5));
       const left = stumbling && tumbleTotal > 0 ? p.stumbleT / tumbleTotal : 0; // 1 at the hit, 0 at the end
-      const pitch = 0.45 * left * left, roll = Math.sin(time * 13) * 0.18 * left;
+      // running: lean forward with speed; turn the body toward a lane change
+      const drive = clip === 'run' ? 0.1 * Math.min(1, p.speedMps / cfg.player.maxSpeed) : 0;
+      const pitch = 0.45 * left * left + drive, roll = Math.sin(time * 13) * 0.18 * left;
       kid.rotation.x += (pitch - kid.rotation.x) * Math.min(1, dt * 18);
       kid.rotation.z += (roll - kid.rotation.z) * Math.min(1, dt * 18);
+      yaw += (Math.max(-0.35, Math.min(0.35, -vx * 0.04)) - yaw) * Math.min(1, dt * 12);
+      kidModel.rotation.y = Math.PI + yaw;
+      // squash/stretch from the feet: jump and landing, a small dip on each real step
+      const squash = jumpSquash(jumpT, landT, p.airborne, p.vy / cfg.player.jumpVelocity) ?? (clip === 'run' ? -0.05 * stepKick : 0);
+      kid.scale.set(KID_SCALE * (1 - squash * 0.5), KID_SCALE * (1 + squash), KID_SCALE * (1 - squash * 0.5));
       kidMixer.update(dt);
       return;
     }
@@ -418,7 +431,6 @@ export function createActors(scene, cfg = config) {
     if (!rig) return;
     const speed = world.phase === 'running' ? p.speedMps : 0;
     phase += (speed / STRIDE) * Math.PI * 2 * dt * 0.5;
-    stepKick = Math.max(0, stepKick - dt * 6);
     const amp = clip === 'idle' ? 0 : Math.min(1, 0.25 + speed / cfg.player.maxSpeed);
     const s = Math.sin(phase);
     // blend toward the pose instead of snapping: run <-> jump eases over ~0.1 s
@@ -437,10 +449,8 @@ export function createActors(scene, cfg = config) {
       rig.body.position.y = Math.abs(s) * 0.09 * amp + (clip === 'idle' ? Math.sin(time * 2.5) * 0.01 : 0);
     }
     // squash on each foot plant, stretch between; crouch at take-off, stretch rising, squash on landing
-    let squash = clip === 'run' ? 0.05 * Math.cos(phase * 2) * amp - stepKick * 0.06 : 0;
-    if (jumpT < 0.08) squash = -0.22 * (1 - jumpT / 0.08);
-    else if (clip === 'jump') squash = 0.04 + 0.1 * Math.max(0, p.vy / cfg.player.jumpVelocity);
-    if (landT < 0.12) squash = -0.18 * (1 - landT / 0.12);
+    const squash = jumpSquash(jumpT, landT, clip === 'jump', p.vy / cfg.player.jumpVelocity)
+      ?? (clip === 'run' ? 0.05 * Math.cos(phase * 2) * amp - stepKick * 0.06 : 0);
     rig.body.scale.set(1 - squash * 0.5, 1 + squash, 1 - squash * 0.5);
     rig.body.rotation.x = clip === 'stumble' ? tumblePitch(p.stumbleT) : clip === 'run' ? 0.12 * amp : 0;
     rig.head.rotation.x = clip === 'stumble' ? -0.3 : 0;
@@ -495,8 +505,10 @@ export function createActors(scene, cfg = config) {
       bossClip = fadeTo(bossClips, bossClip, caught ? 'Bite' : howlT > 0 ? 'Howl' : peeking ? 'Bark' : 'Run');
       if (bossClips.Run) bossClips.Run.timeScale = Math.max(ch.speedMps, 4) / 7;
       bossMixer.update(dt);
-      bossPose.position.y = 0;
-      bossPose.rotation.set(0, 0, 0);
+      // running: a bound per clip loop on top of the clip
+      const r = bossClip === 'Run' ? runBob(clipFrac(bossClips.Run)) : { bob: 0, pitch: 0 };
+      bossPose.position.y = r.bob;
+      bossPose.rotation.set(r.pitch, 0, 0);
       bossPose.scale.set(1, 1, 1);
       chaserModel.rotation.y = Math.PI + (caught ? side * 0.6 * lunge : 0);
       return;
