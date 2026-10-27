@@ -21,3 +21,17 @@ export function showChaser(world, peekT) {
 export function eyeColor(world) {
   return world.chaser.visible || world.chase.phase === 'active' ? 'red' : 'amber';
 }
+
+/**
+ * Where a woken heel dog runs: just behind the kid, half a lane to one side
+ * (dog 0 to the road-centre side, dog 1 the other way), clamped to the road.
+ * @param {0|1} index
+ * @returns {{ x: number, back: number }} back = metres behind the kid
+ */
+export function heelSlot(index, playerX, laneWidth) {
+  const centreSide = playerX > 0.1 ? -1 : 1;
+  const side = index === 0 ? centreSide : -centreSide;
+  const edge = 1.5 * laneWidth - 0.4;
+  const x = Math.max(-edge, Math.min(edge, playerX + side * 0.9));
+  return { x, back: index === 0 ? 0.4 : 0.8 }; // the camera's lower edge is ~2 m behind the kid: keep small dogs well inside
+}

@@ -2,12 +2,14 @@
 // with the sim. Meshes are keyed by sim id and pooled per kind.
 import * as THREE from 'three';
 import config from '../config.js';
-import { animationFor, loadModel, makeStandIn, addEyes, BOSS_EYES } from './models.js';
+import { animationFor, loadModel, makeStandIn, addEyes, dogVariant, BOSS_EYES } from './models.js';
 import { advanceGallop, gallopPose } from './dogPose.js';
-import { chaserBack, showChaser, eyeColor } from './chaserView.js';
+import { chaserBack, showChaser, eyeColor, heelSlot } from './chaserView.js';
 
 const KINDS = ['dog', 'jar', 'cart', 'tuktuk'];
 const COIN_Y = 0.85;
+/** Heel and pack dogs: the boss mesh, smaller and tan like the sleeping dogs. */
+const SMALL_DOG = { scale: 0.6, tint: 0xd9a066 };
 /** Stride: one full leg cycle (two steps) per this many metres. */
 const STRIDE = 2.6;
 
@@ -97,6 +99,161 @@ export function createActors(scene, cfg = config) {
   });
   const amberEye = new THREE.Color(0xffb020), redEye = new THREE.Color(0xff2020);
   let redness = 0;
+
+  // ---- small running dogs (heel, pack, title): holder (world spot) > model (faces -Z) > pose (gallop)
+  /**
+   * @typedef {{ holder: THREE.Group, pose: THREE.Group, gallop: number, x: number, z: number,
+   *   mode: string, t: number, hop: number, i: number, v?: number }} SmallDog
+   */
+  /** @returns {SmallDog} */
+  function newSmallDog(x, z) {
+    const holder = new THREE.Group();
+    holder.add(blob(0.8));
+    const model = new THREE.Group();
+    model.rotation.y = Math.PI;
+    holder.add(model);
+    const pose = new THREE.Group();
+    model.add(pose);
+    pose.add(dogVariant(boss, SMALL_DOG));
+    root.add(holder);
+    return { holder, pose, gallop: Math.random() * 6, x, z, mode: 'run', t: 0, hop: 0, i: 0 };
+  }
+  function dropSmallDog(d) { root.remove(d.holder); }
+  /** Gallop (or sit / lie down) and place a small dog at its world spot. */
+  function poseSmallDog(d, speedMps, dt) {
+    d.hop = Math.max(0, d.hop - dt * 3);
+    d.holder.position.set(d.x, Math.sin(d.hop * Math.PI) * 0.5, d.z);
+    if (d.mode === 'sit') {
+      // pants, sits, scratches: front up, back squashed, a side wiggle
+      d.pose.position.y = 0;
+      d.pose.rotation.set(-0.45 * Math.min(1, d.t * 3), 0, Math.sin(d.t * 22) * 0.06);
+      d.pose.scale.set(1, 1 + Math.sin(d.t * 14) * 0.03, 0.85);
+      return;
+    }
+    if (d.mode === 'lie') {
+      const k = Math.min(1, d.t * 2);
+      d.pose.position.y = 0;
+      d.pose.rotation.set(0, 0, 0);
+      d.pose.scale.set(1 + 0.15 * k, 1 - 0.4 * k, 1);
+      return;
+    }
+    d.gallop = advanceGallop(d.gallop, Math.max(speedMps, 3), dt);
+    const g = gallopPose(d.gallop);
+    d.pose.position.y = g.bob * 0.6;
+    d.pose.rotation.set(g.lean, 0, 0);
+    d.pose.scale.set(1, 1 / Math.sqrt(g.stretch), g.stretch);
+  }
+
+  /** @type {Map<number, SmallDog>} heel dogs by sim id; leaving ones move to negative keys */
+  const heel = new Map();
+  let leavingKey = -1;
+  /** @type {SmallDog[]} */
+  let pack = [];
+  /** 'off' | 'intro' | 'chase' | 'giveup' */
+  let packMode = 'off', packT = 0;
+  /** sleeping dog on the title screen; at the start the same spot's dog runs off */
+  let titleDog = null;
+  /** @type {SmallDog|null} */
+  let titleRunner = null;
+  let wakeTitleDog = false;
+
+  function dropPack() {
+    for (const d of pack) dropSmallDog(d);
+    pack = [];
+    packMode = 'off';
+  }
+  function clearSmallDogs() {
+    for (const d of heel.values()) dropSmallDog(d);
+    heel.clear();
+    dropPack();
+    if (titleRunner) { dropSmallDog(titleRunner); titleRunner = null; }
+  }
+
+  function syncSmallDogs(world, interp, dt) {
+    const p = world.player;
+    const laneW = cfg.player.laneWidth;
+    const kidZ = -interp.z;
+    const ease = (from, to, rate) => from + (to - from) * Math.min(1, dt * rate);
+
+    // heel dogs follow their slot; one whose time ran out sits where it is and drops out of frame
+    const ids = new Set(world.heelDogs.map((h) => h.id));
+    for (const [key, d] of [...heel]) {
+      if (key > 0 && !ids.has(key)) { heel.delete(key); d.mode = 'tired'; d.t = 0; d.v = p.speedMps; heel.set(leavingKey--, d); }
+    }
+    world.heelDogs.forEach((h, i) => {
+      let d = heel.get(h.id);
+      const slot = heelSlot(/** @type {0|1} */ (Math.min(i, 1)), interp.x, laneW);
+      if (!d) { d = newSmallDog(slot.x, kidZ + slot.back); d.hop = 1; heel.set(h.id, d); }
+      d.x = ease(d.x, slot.x, 5);
+      d.z = ease(d.z, kidZ + slot.back, 8);
+    });
+    for (const [key, d] of [...heel]) {
+      d.t += dt;
+      if (d.mode === 'tired') {
+        // slows down panting so the kid gets ahead, then sits and scratches
+        d.v *= Math.exp(-dt * 1.2);
+        d.z -= d.v * dt;
+        if (d.v < 1.5) { d.mode = 'sit'; d.t = 0; }
+      }
+      if (key < 0 && d.mode === 'sit' && d.t > 2.5) { dropSmallDog(d); heel.delete(key); continue; }
+      poseSmallDog(d, key > 0 ? p.speedMps : d.v ?? 0, dt);
+    }
+
+    // chase pack: run in from the sides, fall back to the boss, then run with it
+    if (packMode !== 'off') {
+      packT += dt;
+      const fx = cfg.effects;
+      if (!pack.length) {
+        for (let i = 0; i < fx.packSize; i++) {
+          const d = newSmallDog(interp.x + (i % 2 ? -4 : 4), kidZ + 2.5);
+          d.i = i;
+          pack.push(d);
+        }
+      }
+      if (packMode === 'intro' && packT >= fx.packIntroTime) packMode = 'chase';
+      const intro = packMode === 'intro';
+      const bossShown = chaserHolder.visible;
+      for (const d of pack) {
+        d.t += dt;
+        const off = (d.i - (pack.length - 1) / 2) * 1.3;
+        if (packMode === 'giveup') {
+          if (d.t > 0) d.mode = 'lie';
+        } else if (intro) {
+          d.x = ease(d.x, interp.x + off * 1.1, 4);
+          d.z = ease(d.z, kidZ + 0.5 + (d.i % 2) * 0.3, 6);
+        } else if (bossShown) {
+          d.x = ease(d.x, chaserHolder.position.x + off, 4);
+          d.z = ease(d.z, chaserHolder.position.z - 0.3 + (d.i % 2) * 0.3, 4);
+        } else {
+          d.z = ease(d.z, kidZ + 6, 2); // fall back out of frame
+        }
+        d.holder.visible = intro || bossShown || packMode === 'giveup' || d.z < kidZ + 4;
+        poseSmallDog(d, packMode === 'giveup' ? 0 : p.speedMps, dt);
+      }
+      if (packMode === 'giveup' && packT > 2) dropPack();
+    }
+
+    // title: a sleeping dog beside the start; it wakes and runs off when the run starts
+    if (!titleDog) {
+      titleDog = templates.dog.clone();
+      titleDog.rotation.y = -0.6;
+      root.add(titleDog);
+    }
+    titleDog.visible = world.phase === 'title';
+    titleDog.position.set(1.7, 0, kidZ - 1.6);
+    if (wakeTitleDog) {
+      wakeTitleDog = false;
+      titleRunner = newSmallDog(1.7, kidZ - 1.6);
+      titleRunner.hop = 1;
+    }
+    if (titleRunner) {
+      titleRunner.t += dt;
+      titleRunner.z -= 9 * dt; // faster than a jog: shoots off ahead and to the side
+      titleRunner.x = ease(titleRunner.x, 3.6, 1.5);
+      poseSmallDog(titleRunner, 9, dt);
+      if (titleRunner.t > 2) { dropSmallDog(titleRunner); titleRunner = null; }
+    }
+  }
 
   // ---- obstacles and coins, by sim id
   /** @type {Map<number, { obj: THREE.Object3D, pad?: THREE.Mesh, kind: string, hitT: number, side: number }>} */
@@ -269,11 +426,13 @@ export function createActors(scene, cfg = config) {
       a.pad.position.set(x, 0.015, z);
       a.pad.visible = !o.hit;
       if (o.hit) a.hitT += dt;
+      // a hit sleeping dog wakes and becomes a heel dog: the lying one just goes (never flies)
+      a.obj.visible = !(o.hit && o.kind === 'dog');
       // hit: shoved aside and tipped over (the run goes on)
       const h = Math.min(1, a.hitT / 0.35);
       const ease = 1 - (1 - h) * (1 - h);
-      a.obj.position.set(x + a.side * ease * 1.3, o.kind === 'dog' ? Math.sin(h * Math.PI) * 0.8 : 0, z);
-      a.obj.rotation.set(0, 0, -a.side * ease * (o.kind === 'dog' ? 0 : 0.5));
+      a.obj.position.set(x + a.side * ease * 1.3, 0, z);
+      a.obj.rotation.set(0, 0, -a.side * ease * 0.5);
     }
     for (const c of world.track.coins) {
       seen.add(c.id);
@@ -304,9 +463,20 @@ export function createActors(scene, cfg = config) {
       syncKid(world, interp, dt);
       syncChaser(world, interp, dt);
       syncTrack(world, dt);
+      syncSmallDogs(world, interp, dt);
     },
     onEvent(name) {
-      if (name === 'run-start') { phase = 0; peekT = 0; peekIn = 0; }
+      if (name === 'run-start') {
+        phase = 0; peekT = 0; peekIn = 0;
+        wakeTitleDog = titleDog?.visible ?? false;
+        clearSmallDogs();
+      }
+      else if (name === 'chase-start') { packMode = 'intro'; packT = 0; }
+      else if (name === 'chase-survived') {
+        // in view: the pack gives up and lies down, one after another; out of view: just gone
+        if (pack.some((d) => d.holder.visible)) { packMode = 'giveup'; packT = 0; for (const d of pack) d.t = -0.3 * d.i; }
+        else dropPack();
+      }
       else if (name === 'hit') peekT = cfg.effects.peekTime;
       else if (name === 'jump') jumpT = 0;
       else if (name === 'land') landT = 0;

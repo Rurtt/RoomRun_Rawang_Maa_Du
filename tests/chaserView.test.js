@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import config from '../src/config.js';
-import { chaserBack, showChaser, eyeColor } from '../src/render/chaserView.js';
+import { chaserBack, showChaser, eyeColor, heelSlot } from '../src/render/chaserView.js';
 
 const world = ({ phase = 'running', visible = false, chase = 'idle' } = {}) => ({ phase, chaser: { visible }, chase: { phase: chase } });
 
@@ -22,4 +22,12 @@ test('eyeColor: red when close or during the chase event', () => {
   expect(eyeColor(world({ visible: true }))).toBe('red');
   expect(eyeColor(world({ chase: 'active' }))).toBe('red');
   expect(eyeColor(world({ chase: 'warning' }))).toBe('amber');
+});
+
+test('heelSlot: two different spots right behind the kid, never off the road', () => {
+  for (const px of [-2.5, 0, 2.5]) {
+    const a = heelSlot(0, px, 2.5), b = heelSlot(1, px, 2.5);
+    expect(a.x).not.toBeCloseTo(b.x);
+    for (const s of [a, b]) { expect(Math.abs(s.x)).toBeLessThanOrEqual(3.75); expect(s.back).toBeGreaterThan(0); expect(s.back).toBeLessThanOrEqual(2); }
+  }
 });
