@@ -50,10 +50,10 @@ test('title has obstacles ahead to look at', () => {
   const w = createWorld(config, 1); expect(w.track.obstacles.length).toBeGreaterThan(0);
 });
 
-test('ghost-near fires when the gap drops under visibleGap', () => {
+test('chaser-near fires when the gap drops under visibleGap', () => {
   const w = createWorld(config, 1); startRun(w); expect(w.chaser.visible).toBe(false);
-  const { events, t } = runUntil(w, idle, (e) => e.includes('ghost-near'), 5);
-  expect(count(events, 'ghost-near')).toBe(1); expect(w.chaser.visible).toBe(true);
+  const { events, t } = runUntil(w, idle, (e) => e.includes('chaser-near'), 5);
+  expect(count(events, 'chaser-near')).toBe(1); expect(w.chaser.visible).toBe(true);
   expect(t).toBeCloseTo((20 - 12) / 6, 1);
 });
 
@@ -101,8 +101,8 @@ test('hitting a jump obstacle stumbles once', () => {
   const { events, t } = runUntil(w, sprint, (e) => e.includes('hit'), 5);
   expect(count(events, 'hit')).toBe(1); expect(t).toBeCloseTo((40 - 0.8) / 12, 1);
   const after = run(w, sprint, 0.9); expect(count(after.events, 'hit')).toBe(0);
-  expect(w.player.speedMps).toBeLessThanOrEqual(0.4 * 12 + 1e-9);
-  run(w, sprint, 0.2); expect(w.player.speedMps).toBeCloseTo(12);
+  expect(w.player.speedMps).toBeLessThanOrEqual(0.2 * 12 + 1e-9);
+  run(w, sprint, 0.7); expect(w.player.speedMps).toBeCloseTo(12);
   expect(w.track.obstacles[0].hit).toBe(true); expect(w.phase).toBe('running');
 });
 
@@ -199,4 +199,14 @@ test('config is read live', () => {
   cfg.chaser.speed = 10;
   const { t } = runUntil(w, idle, (e) => e.includes('caught'), 10);
   expect(t).toBeCloseTo(2, 1);
+});
+
+test('hit: stumble 1.5 s at 20% speed', () => {
+  const w = createWorld(emptyCfg(), 1); startRun(w);
+  w.track.obstacles.push(dog(5));
+  runUntil(w, sprint, (e) => e.includes('hit'), 2);
+  run(w, sprint, 1.4);
+  expect(w.player.speedMps).toBeCloseTo(2.4, 5);
+  run(w, sprint, 0.2);
+  expect(w.player.speedMps).toBeCloseTo(12, 5);
 });

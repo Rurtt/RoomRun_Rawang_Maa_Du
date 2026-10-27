@@ -20,6 +20,14 @@ test('chaseSeconds rounds up so the countdown ends on 1, never shows 0 while act
 });
 
 test('strings', () => {
-  expect(strings.chaseBanner(30)).toBe('ไล่ล่า 30 วิ!'); expect(strings.gap(24)).toBe('ผีห่าง 24 ม.');
+  expect(strings.gap(24)).toBe('หมาห่าง 24 ม.');
   expect(strings.phoneLost).toBe('มือถือหลุด');
+});
+
+test('dog-theme strings', () => {
+  expect(strings.title).toBe('ระวังหมาดุ');
+  expect(strings.gap('24')).toBe('หมาห่าง 24 ม.');
+  expect(strings.chaseBanner(30)).toBe('ฝูงหมาไล่! 30 วิ');
+  expect(strings.caught).toBe('หมาทันแล้ว!');
+  expect(strings.survived).toBe('รอดแล้ว!');
 });

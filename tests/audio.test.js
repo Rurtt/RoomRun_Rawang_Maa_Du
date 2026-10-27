@@ -7,7 +7,7 @@ test('soundForEvent maps world events to sounds', () => {
   expect(soundForEvent('land')).toBe('land'); expect(soundForEvent('hit')).toBe('hit');
   expect(soundForEvent('chase-warning')).toBe('alarm'); expect(soundForEvent('chase-survived')).toBe('escape');
   expect(soundForEvent('caught')).toBe('caught'); expect(soundForEvent('lane')).toBeNull();
-  expect(soundForEvent('ghost-near')).toBe('ghost'); expect(soundForEvent('nonsense')).toBeNull();
+  expect(soundForEvent('chaser-near')).toBe('ghost'); expect(soundForEvent('nonsense')).toBeNull();
 });
 
 test('every sound has a synth fallback, so the game never goes silent', () => {

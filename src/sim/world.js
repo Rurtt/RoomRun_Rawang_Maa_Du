@@ -3,7 +3,7 @@
 // and returns the names of what happened. Render, HUD and audio only read the
 // world and react to those event names.
 //
-// Events: 'run-start' 'lane' 'jump' 'land' 'coin' 'hit' 'ghost-near'
+// Events: 'run-start' 'lane' 'jump' 'land' 'coin' 'hit' 'chaser-near'
 //         'chase-warning' 'chase-start' 'chase-survived' 'caught'
 import config from '../config.js';
 import { createRng } from './rng.js';
@@ -163,7 +163,7 @@ export function stepWorld(world, input, dt) {
   }
   const wasVisible = ch.visible;
   ch.visible = ch.gap < cfg.chaser.visibleGap;
-  if (ch.visible && !wasVisible) events.push('ghost-near');
+  if (ch.visible && !wasVisible) events.push('chaser-near');
 
   // Chase event: warning -> active (chaser faster) -> survived (reward) -> idle
   const chase = world.chase;

@@ -18,7 +18,7 @@ export const FILES = {
 };
 
 const EVENT_SOUND = {
-  coin: 'coin', jump: 'jump', land: 'land', hit: 'hit', 'ghost-near': 'ghost',
+  coin: 'coin', jump: 'jump', land: 'land', hit: 'hit', 'chaser-near': 'ghost',
   'chase-warning': 'alarm', 'chase-survived': 'escape', caught: 'caught',
 };
 

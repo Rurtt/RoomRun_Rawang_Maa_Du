@@ -1,4 +1,4 @@
-// Slow-mo grab: in the last ~second before the ghost catches the kid the game
+// Slow-mo grab: in the last ~second before the boss dog catches the kid the game
 // runs slower so the grab reads on video. The sim's rules are untouched; main.js
 // feeds the loop less time per real second.
 import config from '../config.js';
