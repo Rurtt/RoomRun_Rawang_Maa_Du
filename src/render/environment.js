@@ -1,7 +1,7 @@
 // The soi: road, shophouses, neon signs, street lamps, tangled power lines.
-// Built from 40 m segments; a ring of 6 slots leapfrogs forward as the player
+// Built from 40 m segments; a ring of 8 slots leapfrogs forward as the player
 // runs. Each slot shows one of several prebuilt variants, merged into a few
-// meshes per slot so the whole street is ~70 draw calls.
+// meshes per slot so the whole street is ~90 draw calls.
 //
 // Coordinates: sim distance d runs forward; Three.js z = -d. Lane x = lane * laneWidth.
 import * as THREE from 'three';
@@ -10,14 +10,16 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import strings from '../strings.js';
 import { createRng } from '../sim/rng.js';
 import { MOOD } from './renderer.js';
-import { toonMaterial, outlineMaterial, withOutlineNormals } from './toon.js';
+import { toonMaterial } from './toon.js';
 
 const SEG_LEN = 40;
-const RING = 6;
+const RING = 8;
 const VARIANTS = 8;
 const ROAD_HALF = 4.25; // 3 lanes of 2.5 m plus a margin
 const WALK = 1.7; // sidewalk width
 const FRONT = ROAD_HALF + WALK; // shophouse front line
+const CURB = 0.22;
+const BEHIND = 100; // street kept behind the player: the caught camera looks back, fog hides ~125 m
 const LAMP_EVERY = SEG_LEN / 3;
 const REAL_LIGHTS = 4;
 const LAMP_INTENSITY = 32;
@@ -82,6 +84,22 @@ function glowSpriteTexture() {
   g.fillRect(0, 0, 64, 64);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** 2 x 1 px red | white, repeated along the curb. */
+function curbTexture() {
+  const c = document.createElement('canvas');
+  c.width = 2; c.height = 1;
+  const g = c.getContext('2d');
+  g.fillStyle = '#d8343a'; g.fillRect(0, 0, 1, 1);
+  g.fillStyle = '#f0f0f0'; g.fillRect(1, 0, 1, 1);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  t.magFilter = THREE.NearestFilter; // crisp stripes up close
+  t.minFilter = THREE.LinearMipmapLinearFilter; // far away: blends to pink, no shimmer
+  t.anisotropy = 8;
   return t;
 }
 
@@ -150,15 +168,35 @@ function paint(geo, hex, intensity = 1) {
   return geo;
 }
 
+/**
+ * Fake ambient occlusion baked into the vertex colours: walls darken toward the
+ * ground and undersides (awnings, balconies, ledges) stay shaded. Gives the depth
+ * the old black outlines were faking. Top faces are left alone so the road stays even.
+ */
+const AO_FLOOR = 0.62, AO_HEIGHT = 1.4, AO_UNDER = 0.68;
+function bakeAo(geo) {
+  const pos = geo.getAttribute('position');
+  const nor = geo.getAttribute('normal');
+  const col = geo.getAttribute('color');
+  for (let i = 0; i < pos.count; i++) {
+    const ny = nor.getY(i);
+    let k = 1;
+    if (ny < -0.5) k = AO_UNDER;
+    else if (ny < 0.5) k = AO_FLOOR + (1 - AO_FLOOR) * THREE.MathUtils.smoothstep(pos.getY(i), 0, AO_HEIGHT);
+    col.setXYZ(i, col.getX(i) * k, col.getY(i) * k, col.getZ(i) * k);
+  }
+  return geo;
+}
+
 /** Collects one segment's parts, then merges them into a few geometries. */
 class Builder {
-  constructor() { this.toon = []; this.flat = []; this.glow = []; this.signs = []; this.lines = []; this.lamps = []; }
+  constructor() { this.toon = []; this.flat = []; this.glow = []; this.signs = []; this.curbs = []; this.lines = []; this.lamps = []; }
 
-  /** Outlined, toon-shaded part. */
-  add(geo, hex) { geo.deleteAttribute('uv'); this.toon.push(withOutlineNormals(paint(geo, hex))); return this; }
+  /** Toon-shaded part with baked AO. */
+  add(geo, hex) { geo.deleteAttribute('uv'); this.toon.push(bakeAo(paint(geo, hex))); return this; }
   box(w, h, d, hex, x, y, z, rx, ry, rz) { return this.add(place(new THREE.BoxGeometry(w, h, d), x, y, z, rx, ry, rz), hex); }
   cyl(rt, rb, h, seg, hex, x, y, z, rx, ry, rz) { return this.add(place(new THREE.CylinderGeometry(rt, rb, h, seg), x, y, z, rx, ry, rz), hex); }
-  /** Toon-shaded, no outline (road paint, stripes). */
+  /** Toon-shaded, no AO (road paint, stripes). */
   flatBox(w, h, d, hex, x, y, z, rx, ry, rz) {
     const geo = place(new THREE.BoxGeometry(w, h, d), x, y, z, rx, ry, rz); geo.deleteAttribute('uv');
     this.flat.push(paint(geo, hex)); return this;
@@ -176,6 +214,13 @@ class Builder {
       uv.setXY(i, (rect.x + uv.getX(i) * rect.w) / ATLAS, 1 - (rect.y + (1 - uv.getY(i)) * rect.h) / ATLAS);
     }
     this.signs.push(paint(geo, 0xffffff, intensity)); return this;
+  }
+  /** Curb box; u runs along z, one red-white stripe pair per 2 m (curbTexture). */
+  curb(w, h, d, x, y, z) {
+    const geo = place(new THREE.BoxGeometry(w, h, d), x, y, z);
+    const pos = geo.getAttribute('position'), uv = geo.getAttribute('uv');
+    for (let i = 0; i < pos.count; i++) uv.setXY(i, -pos.getZ(i) / 2, 0.5);
+    this.curbs.push(geo); return this;
   }
   /** Polyline as line segments. */
   line(points) { for (let i = 1; i < points.length; i++) this.lines.push(points[i - 1], points[i]); return this; }
@@ -199,7 +244,7 @@ class Builder {
   merge() {
     const m = (list) => (list.length ? mergeGeometries(list) : new THREE.BufferGeometry());
     const lineGeo = new THREE.BufferGeometry().setFromPoints(this.lines);
-    return { toon: m(this.toon), flat: m(this.flat), glow: m(this.glow), signs: m(this.signs), lines: lineGeo };
+    return { toon: m(this.toon), flat: m(this.flat), glow: m(this.glow), signs: m(this.signs), curb: m(this.curbs), lines: lineGeo };
   }
 }
 
@@ -211,9 +256,10 @@ function road(b) {
   b.flatBox(ROAD_HALF * 2, 0.1, SEG_LEN, 0x2e2c38, 0, -0.05, c);
   for (let z = 0; z < SEG_LEN; z += 5) for (const x of [-1.25, 1.25]) b.flatBox(0.14, 0.02, 2.2, 0xd8d8e4, x, 0.01, -z - 1.6);
   for (const side of [-1, 1]) {
-    b.flatBox(WALK, 0.16, SEG_LEN, 0x8f8a99, side * (ROAD_HALF + WALK / 2), 0.08, c);
-    // red-white painted curb, Thai style
-    for (let z = 0; z < SEG_LEN; z += 1) b.flatBox(0.22, 0.2, 1.0, (z % 2) ? 0xf0f0f0 : 0xd8343a, side * (ROAD_HALF + 0.11), 0.1, -z - 0.5);
+    // sidewalk starts behind the curb: a shared road-facing face z-fights
+    b.flatBox(WALK - CURB, 0.16, SEG_LEN, 0x8f8a99, side * (ROAD_HALF + CURB + (WALK - CURB) / 2), 0.08, c);
+    // red-white painted curb, Thai style: one textured box, so far-off stripes blend (mipmaps) instead of shimmering
+    b.curb(CURB, 0.2, SEG_LEN, side * (ROAD_HALF + CURB / 2), 0.1, c);
   }
 }
 
@@ -269,9 +315,10 @@ function boardSign(b, side, zc, width, r) {
   const fx = side * FRONT, out = -side;
   const boardLen = Math.min(width - 0.8, 3.6);
   const boardCell = Math.floor(r() * 16);
-  b.box(0.12, 0.95, boardLen + 0.12, 0x161022, fx + out * 0.08, 3.6, zc);
+  // y 3.7 keeps the board's bottom above the ground-floor beam (top 3.2 m, same front plane)
+  b.box(0.12, 0.95, boardLen + 0.12, 0x161022, fx + out * 0.09, 3.7, zc);
   b.sign(boardLen, 0.8, { x: 1024, y: boardCell * BOARD.h, w: BOARD.w, h: BOARD.h }, boardIsNeon(boardCell) ? 1.45 : 0.9,
-    fx + out * 0.15, 3.6, zc, out > 0 ? Math.PI / 2 : -Math.PI / 2);
+    fx + out * 0.18, 3.7, zc, out > 0 ? Math.PI / 2 : -Math.PI / 2);
 }
 
 /** Blade sign sticking out over the sidewalk, facing the camera (+z). */
@@ -282,7 +329,7 @@ function bladeSign(b, side, z, y, r) {
   b.box(1.85, 0.98, 0.1, 0x161022, bx, y, z);
   b.box(0.08, 0.08, 1.1, 0x555555, fx + out * 0.55, y + 0.5, z, 0, Math.PI / 2, 0);
   b.sign(1.7, 0.85, { x: (cell % 2) * BLADE.w, y: Math.floor(cell / 2) * BLADE.h, w: BLADE.w, h: BLADE.h },
-    bladeIsNeon(cell) ? 1.55 : 0.9, bx, y, z + 0.06);
+    bladeIsNeon(cell) ? 1.55 : 0.9, bx, y, z + 0.08);
 }
 
 /** Roof water tank (blue plastic or steel), centre height y. */
@@ -457,10 +504,11 @@ export function createEnvironment(scene) {
 
   const mats = {
     toon: toonMaterial(0xffffff, { vertexColors: true }),
-    outline: outlineMaterial(0.045),
     flat: toonMaterial(0xffffff, { vertexColors: true }),
     glow: new THREE.MeshBasicMaterial({ vertexColors: true }),
-    signs: new THREE.MeshBasicMaterial({ vertexColors: true, map: atlas }),
+    // pulled toward the camera so far-away signs don't flicker against their backing box
+    signs: new THREE.MeshBasicMaterial({ vertexColors: true, map: atlas, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }),
+    curb: toonMaterial(0xffffff, { map: curbTexture() }),
     lines: new THREE.LineBasicMaterial({ color: 0x0c0810 }),
     sprite: new THREE.SpriteMaterial({ map: glowSpriteTexture(), color: MOOD.lamp, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85 }),
   };
@@ -472,10 +520,10 @@ export function createEnvironment(scene) {
     const group = new THREE.Group();
     const meshes = {
       toon: new THREE.Mesh(v.toon, mats.toon),
-      outline: new THREE.Mesh(v.toon, mats.outline),
       flat: new THREE.Mesh(v.flat, mats.flat),
       glow: new THREE.Mesh(v.glow, mats.glow),
       signs: new THREE.Mesh(v.signs, mats.signs),
+      curb: new THREE.Mesh(v.curb, mats.curb),
       lines: new THREE.LineSegments(v.lines, mats.lines),
     };
     Object.values(meshes).forEach((m) => { m.matrixAutoUpdate = false; group.add(m); });
@@ -499,10 +547,10 @@ export function createEnvironment(scene) {
   function setVariant(slot, v) {
     slot.variant = v;
     slot.meshes.toon.geometry = v.toon;
-    slot.meshes.outline.geometry = v.toon;
     slot.meshes.flat.geometry = v.flat;
     slot.meshes.glow.geometry = v.glow;
     slot.meshes.signs.geometry = v.signs;
+    slot.meshes.curb.geometry = v.curb;
     slot.meshes.lines.geometry = v.lines;
   }
   function placeSlot(slot, start) {
@@ -510,7 +558,7 @@ export function createEnvironment(scene) {
     slot.group.position.z = -start;
   }
   function layout(playerZ) {
-    const first = Math.floor(playerZ / SEG_LEN) * SEG_LEN - SEG_LEN;
+    const first = Math.floor(playerZ / SEG_LEN) * SEG_LEN - Math.ceil(BEHIND / SEG_LEN) * SEG_LEN;
     slots.forEach((slot, k) => { placeSlot(slot, first + k * SEG_LEN); setVariant(slot, variants[k % VARIANTS]); });
   }
   layout(0);
@@ -521,7 +569,7 @@ export function createEnvironment(scene) {
     const old = variants;
     variants = seeds.map((s) => buildVariant(s, kit));
     for (const slot of slots) setVariant(slot, variants[old.indexOf(slot.variant)]);
-    for (const v of old) for (const key of ['toon', 'flat', 'glow', 'signs', 'lines']) v[key].dispose();
+    for (const v of old) for (const key of ['toon', 'flat', 'glow', 'signs', 'curb', 'lines']) v[key].dispose();
   });
 
   let lastZ = 0;
@@ -531,7 +579,7 @@ export function createEnvironment(scene) {
       if (playerZ < lastZ - SEG_LEN) layout(playerZ); // new run
       lastZ = playerZ;
       for (const slot of slots) {
-        while (slot.start + SEG_LEN < playerZ - 12) {
+        while (slot.start + SEG_LEN < playerZ - BEHIND) {
           placeSlot(slot, slot.start + RING * SEG_LEN);
           setVariant(slot, variants[Math.floor(rng() * VARIANTS)]);
         }

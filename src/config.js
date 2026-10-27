@@ -16,8 +16,8 @@ export default {
   // Dog rework: hit-stop, boss peek after a hit, woken heel dogs, per-obstacle extras, chase pack
   effects: { hitStop: 0.08, peekTime: 1.5, heelTime: 10, heelSpeedBonus: 1, maxHeelDogs: 2,
              cartCoinLoss: 10, tuktukStun: 2, packIntroTime: 2, packSize: 3 },
-  // last ~1 s before a catch the game runs at slowMoScale (the grab reads on video)
-  juice: { slowMoScale: 0.4, slowMoWindow: 1.0, slowMoMaxGap: 4 },
+  // last ~0.6 s before a catch the game runs at slowMoScale (the grab reads on video)
+  juice: { slowMoScale: 0.7, slowMoWindow: 0.6, slowMoMaxGap: 4 },
   // Phone/stick arm-swing detection, m/s^2 with gravity removed. Tuned from logs (scripts/replay.mjs).
   motion: {
     axes: { vertical: 1, lateral: 0 },     // indexes into a = [x, y, z]
