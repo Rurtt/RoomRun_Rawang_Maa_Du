@@ -232,8 +232,9 @@ const gltfCache = new Map();
  * Re-skin a loaded model with the shared toon look and outlines.
  * @param {THREE.Object3D} root
  * @param {boolean} rim characters: add the neon rim (own material copy, the toon cache stays plain)
+ * @param {boolean} [outline] black outline, default with the rim
  */
-function toonify(root, rim) {
+function toonify(root, rim, outline = rim) {
   root.traverse((o) => {
     if (!o.isMesh || o.name.endsWith('-outline')) return;
     const old = o.material;
@@ -246,7 +247,8 @@ function toonify(root, rim) {
     } else o.material = toonMaterial(color, { map: old.map || undefined });
     if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); // Mesh2Motion exports have none
     if (o.isSkinnedMesh) o.frustumCulled = false;
-    if (rim && !old.name.includes('flat_')) addOutline(o, CHARACTER_OUTLINE); // characters only; face details stay clean
+    // characters only; face details stay clean. The sleeping dog (a TRELLIS scan) traces a noisy line, so it goes without.
+    if (rim && outline && !old.name.includes('flat_')) addOutline(o, CHARACTER_OUTLINE);
   });
 }
 
@@ -262,7 +264,7 @@ function fetchGltf(name) {
       })
       .then((gltf) => {
         if (!gltf) return null;
-        toonify(gltf.scene, CHARACTERS.has(name));
+        toonify(gltf.scene, CHARACTERS.has(name), CHARACTERS.has(name) && name !== 'dog');
         return { scene: gltf.scene, animations: gltf.animations };
       })
       .catch((err) => { console.warn(`model ${name}: using stand-in (${err.message})`); return null; }));
