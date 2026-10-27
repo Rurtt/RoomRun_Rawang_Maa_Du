@@ -2,32 +2,41 @@
 // file that fails to load. The AudioContext is made on the first key press
 // (browser autoplay rule); files are fetched right away so they're ready.
 import config from '../config.js';
-import { SYNTH, createGhostLoop } from './synth.js';
+import { SYNTH, createGrowlLoop, createPackLoop } from './synth.js';
 
-/** @typedef {'step'|'coin'|'jump'|'land'|'hit'|'ghost'|'alarm'|'caught'|'escape'} SoundName */
+/** @typedef {'step'|'coin'|'jump'|'land'|'crash'|'bark'|'howl'|'jar'|'meatball'|'horn'|'yell'|'caught'|'escape'} SoundName */
 
 /** @type {SoundName[]} */
-export const SOUND_NAMES = ['step', 'coin', 'jump', 'land', 'hit', 'ghost', 'alarm', 'caught', 'escape'];
+export const SOUND_NAMES = ['step', 'coin', 'jump', 'land', 'crash', 'bark', 'howl', 'jar', 'meatball', 'horn', 'yell', 'caught', 'escape'];
 
-/** Files per sound (variants picked at random). 'alarm' has none: synth siren. */
+/** Files per sound (variants picked at random), plus the growl and pack-chorus loops and music. */
 export const FILES = {
   step: ['step', 'step2', 'step3', 'step4'],
-  coin: ['coin'], jump: ['jump'], land: ['land'], hit: ['hit'], ghost: ['ghost'],
+  coin: ['coin'], jump: ['jump'], land: ['land'],
+  crash: ['crash'], bark: ['bark', 'bark2', 'bark3'], howl: ['howl'],
+  jar: ['jar'], meatball: ['meatball'], horn: ['horn'], yell: ['yell'],
   caught: ['caught'], escape: ['escape'],
+  growl: ['growl'], pack: ['pack'],
   music: ['music'], music_chase: ['music_chase'],
 };
 
-const EVENT_SOUND = {
-  coin: 'coin', jump: 'jump', land: 'land', hit: 'hit', 'chaser-near': 'ghost',
-  'chase-warning': 'alarm', 'chase-survived': 'escape', caught: 'caught',
+/** @type {Record<string, SoundName[]>} */
+const EVENT_SOUNDS = {
+  coin: ['coin'], jump: ['jump'], land: ['land'],
+  hit: ['crash', 'bark'], // every hit: crash, and the boss barks as it peeks
+  'hit-jar': ['jar'], 'hit-cart': ['meatball', 'yell'], 'hit-tuktuk': ['horn'],
+  'heel-start': ['bark'], 'chaser-near': ['bark'], 'run-start': ['bark'],
+  'chase-start': ['howl'], 'chase-survived': ['escape'], caught: ['caught'],
 };
 
-/** @param {string} event @returns {SoundName|null} */
-export function soundForEvent(event) {
-  return EVENT_SOUND[event] ?? null;
+/** @param {string} event @returns {SoundName[]} */
+export function soundsForEvent(event) {
+  return EVENT_SOUNDS[event] ?? [];
 }
 
-const VOLUME = { step: 0.5, coin: 0.45, jump: 0.5, land: 0.45, hit: 0.8, ghost: 0.6, alarm: 1, caught: 0.7, escape: 0.7 };
+const VOLUME = { step: 0.5, coin: 0.45, jump: 0.5, land: 0.45, crash: 0.85, bark: 0.7, howl: 0.8, jar: 0.75, meatball: 0.6,
+                 horn: 0.7, yell: 0.8, caught: 0.75, escape: 0.7 };
+const GROWL_MAX = 0.6, PACK_MAX = 0.5;
 const MUSIC_VOLUME = 0.32;
 const CROSSFADE = 0.6; // seconds
 
@@ -47,7 +56,10 @@ export function createAudio(cfg = config) {
   /** @type {GainNode} */ let sfx;
   /** @type {Record<string, AudioBuffer[]>} */
   const buffers = {};
-  let ghostLoop = null;
+  /** @type {{ setLevel(level: number): void } | null} */
+  let growlLoop = null;
+  /** @type {{ setLevel(level: number): void } | null} */
+  let packLoop = null;
   let musicGain = null, chaseGain = null;
   let chaseOn = false;
   let unlocking = null;
@@ -56,6 +68,20 @@ export function createAudio(cfg = config) {
     const bytes = await raw[file];
     if (!bytes) return null;
     try { return await ctx.decodeAudioData(bytes.slice(0)); } catch { return null; }
+  }
+
+  /** A looping file at a volume that follows setLevel, or null if the file is missing. */
+  async function fileLoop(name, max) {
+    const buf = await decode(FILES[name][0]);
+    if (!buf) return null;
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.connect(g).connect(sfx);
+    src.start();
+    return { setLevel(level) { g.gain.setTargetAtTime(max * Math.max(0, Math.min(1, level)) ** 2, ctx.currentTime, 0.15); } };
   }
 
   async function startMusic() {
@@ -79,7 +105,7 @@ export function createAudio(cfg = config) {
   }
 
   return {
-    /** Create the AudioContext and start music + ghost loop. Safe to call often. */
+    /** Create the AudioContext and start music + growl and pack loops. Safe to call often. */
     unlock() {
       if (unlocking) return unlocking;
       unlocking = (async () => {
@@ -87,7 +113,9 @@ export function createAudio(cfg = config) {
         await ctx.resume();
         sfx = ctx.createGain();
         sfx.connect(ctx.destination);
-        ghostLoop = createGhostLoop(ctx, sfx);
+        growlLoop = (await fileLoop('growl', GROWL_MAX)) ?? createGrowlLoop(ctx, sfx);
+        packLoop = (await fileLoop('pack', PACK_MAX)) ?? createPackLoop(ctx, sfx);
+        packLoop.setLevel(chaseOn ? 1 : 0);
         await Promise.all(SOUND_NAMES.filter((n) => FILES[n]).map(async (n) => {
           buffers[n] = (await Promise.all(FILES[n].map(decode))).filter(Boolean);
         }));
@@ -96,21 +124,26 @@ export function createAudio(cfg = config) {
       return unlocking;
     },
 
-    /** @param {SoundName} name */
-    play(name) {
+    /** @param {SoundName} name @param {number} [vol] 0..1 on top of the sound's own volume @param {number} [at] seconds from now */
+    play(name, vol = 1, at = 0) {
       if (!ctx || ctx.state !== 'running') return;
       const list = buffers[name];
       if (!list?.length) {
-        SYNTH[name]?.(ctx, sfx, { duration: cfg.chase.warningTime });
+        SYNTH[name]?.(ctx, sfx, { vol, at });
         return;
       }
       const src = ctx.createBufferSource();
       src.buffer = list[Math.floor(Math.random() * list.length)];
       if (name === 'step') src.playbackRate.value = 0.92 + Math.random() * 0.16;
       const g = ctx.createGain();
-      g.gain.value = VOLUME[name] ?? 0.5;
+      g.gain.value = (VOLUME[name] ?? 0.5) * vol;
       src.connect(g).connect(sfx);
-      src.start();
+      src.start(ctx.currentTime + at);
+    },
+
+    /** Chase warning: the pack barking in the distance, getting closer. @param {number} seconds */
+    warn(seconds) {
+      [0.3, 0.6, 1].forEach((v, i) => this.play('bark', v, (i * seconds) / 3));
     },
 
     /** For the debug panel: context state, which sounds have files, music running. */
@@ -125,13 +158,14 @@ export function createAudio(cfg = config) {
 
     /** @param {number} level danger meter fill 0..1 */
     setDanger(level) {
-      ghostLoop?.setLevel(level);
+      growlLoop?.setLevel(level);
     },
 
     /** @param {boolean} active chase event running */
     setChase(active) {
       if (active === chaseOn) return;
       chaseOn = active;
+      packLoop?.setLevel(active ? 1 : 0);
       if (!ctx || !musicGain || !chaseGain) return;
       const t = ctx.currentTime;
       for (const [g, v] of [[musicGain, active ? 0 : MUSIC_VOLUME], [chaseGain, active ? MUSIC_VOLUME : 0]]) {

@@ -18,7 +18,7 @@ import { createEffects } from './render/effects.js';
 import { slowMoTarget, createHitStop } from './render/timeScale.js';
 import { createHud } from './hud/hud.js';
 import { meterFill } from './hud/format.js';
-import { createAudio, soundForEvent } from './audio/audio.js';
+import { createAudio, soundsForEvent } from './audio/audio.js';
 import { hotkeyAction } from './debug/hotkeys.js';
 import { createDebugPanel } from './debug/panel.js';
 
@@ -62,8 +62,8 @@ function emit(events) {
     rig.onEvent(e);
     effects.onEvent(e);
     hud.onEvent(e);
-    const sound = soundForEvent(e);
-    if (sound) audio.play(sound);
+    for (const sound of soundsForEvent(e)) audio.play(sound);
+    if (e === 'chase-warning') audio.warn(config.chase.warningTime);
   }
 }
 

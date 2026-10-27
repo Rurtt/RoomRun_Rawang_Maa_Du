@@ -1,7 +1,5 @@
 // WebAudio synth sounds. Every SoundName has one, so a missing or broken file
-// still makes a noise. The chase siren and the ghost's "wooo" loop are synth
-// on purpose: the siren must last exactly the warning time, the loop must
-// follow the danger meter smoothly.
+// still makes a noise; the growl and pack-chorus loops have synth versions too.
 
 /** One enveloped oscillator: frequency slides from f0 to f1 over `dur`. */
 function blip(ctx, out, { type = 'square', f0, f1 = f0, dur, vol = 0.2, at = 0 }) {
@@ -20,8 +18,8 @@ function blip(ctx, out, { type = 'square', f0, f1 = f0, dur, vol = 0.2, at = 0 }
 }
 
 /** Short filtered noise burst (footsteps, thuds). */
-function noise(ctx, out, { dur, freq, vol = 0.3 }) {
-  const t = ctx.currentTime;
+function noise(ctx, out, { dur, freq, vol = 0.3, at = 0 }) {
+  const t = ctx.currentTime + at;
   const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
   const d = buf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 2;
@@ -36,86 +34,90 @@ function noise(ctx, out, { dur, freq, vol = 0.3 }) {
   src.start(t);
 }
 
-/** @type {Record<string, (ctx: AudioContext, out: AudioNode, opts?: { duration?: number }) => void>} */
+/** A cartoon bark: two quick saw yaps falling in pitch. */
+function bark(ctx, out, vol = 1, at = 0) {
+  blip(ctx, out, { type: 'sawtooth', f0: 620, f1: 260, dur: 0.09, vol: 0.22 * vol, at });
+  blip(ctx, out, { type: 'sawtooth', f0: 560, f1: 240, dur: 0.11, vol: 0.2 * vol, at: at + 0.14 });
+  noise(ctx, out, { dur: 0.06, freq: 1800, vol: 0.15 * vol, at });
+}
+
+/** @type {Record<string, (ctx: AudioContext, out: AudioNode, opts?: { vol?: number, at?: number }) => void>} */
 export const SYNTH = {
   step: (ctx, out) => noise(ctx, out, { dur: 0.08, freq: 900, vol: 0.35 }),
   coin: (ctx, out) => { blip(ctx, out, { f0: 988, dur: 0.07, vol: 0.12 }); blip(ctx, out, { f0: 1319, dur: 0.18, vol: 0.12, at: 0.07 }); },
   jump: (ctx, out) => blip(ctx, out, { type: 'triangle', f0: 300, f1: 700, dur: 0.18, vol: 0.25 }),
   land: (ctx, out) => noise(ctx, out, { dur: 0.12, freq: 400, vol: 0.4 }),
-  hit: (ctx, out) => { noise(ctx, out, { dur: 0.25, freq: 600, vol: 0.6 }); blip(ctx, out, { type: 'sawtooth', f0: 180, f1: 60, dur: 0.25, vol: 0.25 }); },
-  ghost: (ctx, out) => blip(ctx, out, { type: 'sine', f0: 520, f1: 260, dur: 0.9, vol: 0.25 }),
-  /** Two-tone wailing siren for the whole chase warning. */
-  alarm: (ctx, out, { duration = 3 } = {}) => {
-    const t = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const g = ctx.createGain();
-    osc.type = 'square';
-    for (let s = 0; s < duration; s += 0.5) {
-      osc.frequency.setValueAtTime(660, t + s);
-      osc.frequency.linearRampToValueAtTime(990, t + s + 0.25);
-      osc.frequency.linearRampToValueAtTime(660, t + s + 0.5);
-    }
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.09, t + 0.05);
-    g.gain.setValueAtTime(0.09, t + duration - 0.15);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-    osc.connect(g).connect(out);
-    osc.start(t);
-    osc.stop(t + duration + 0.05);
+  crash: (ctx, out) => {
+    noise(ctx, out, { dur: 0.45, freq: 900, vol: 0.8 });
+    blip(ctx, out, { type: 'sawtooth', f0: 160, f1: 40, dur: 0.4, vol: 0.3 });
   },
-  caught: (ctx, out) => [523, 440, 349, 262].forEach((f, i) => blip(ctx, out, { f0: f, dur: 0.22, vol: 0.18, at: i * 0.16 })),
+  bark: (ctx, out, { vol = 1, at = 0 } = {}) => bark(ctx, out, vol, at),
+  howl: (ctx, out) => {
+    blip(ctx, out, { type: 'sawtooth', f0: 330, f1: 660, dur: 0.7, vol: 0.14 });
+    blip(ctx, out, { type: 'sawtooth', f0: 660, f1: 420, dur: 1.1, vol: 0.14, at: 0.65 });
+  },
+  jar: (ctx, out) => {
+    [2400, 1900, 2800].forEach((f, i) => blip(ctx, out, { type: 'triangle', f0: f, f1: f * 0.8, dur: 0.12, vol: 0.12, at: i * 0.03 }));
+    noise(ctx, out, { dur: 0.5, freq: 1400, vol: 0.5, at: 0.02 }); // splash
+  },
+  meatball: (ctx, out) => {
+    for (let i = 0; i < 6; i++) blip(ctx, out, { type: 'sine', f0: 500 + Math.random() * 400, f1: 200, dur: 0.05, vol: 0.2, at: i * 0.06 + Math.random() * 0.03 });
+  },
+  horn: (ctx, out) => {
+    for (const at of [0, 0.22]) { blip(ctx, out, { type: 'square', f0: 420, dur: 0.16, vol: 0.12, at }); blip(ctx, out, { type: 'square', f0: 530, dur: 0.16, vol: 0.08, at }); }
+  },
+  yell: (ctx, out) => blip(ctx, out, { type: 'sawtooth', f0: 320, f1: 210, dur: 0.35, vol: 0.18, at: 0.1 }),
+  caught: (ctx, out) => {
+    bark(ctx, out, 1.2);
+    [523, 440, 349, 262].forEach((f, i) => blip(ctx, out, { f0: f, dur: 0.22, vol: 0.16, at: 0.3 + i * 0.16 }));
+  },
   escape: (ctx, out) => [523, 659, 784, 1047].forEach((f, i) => blip(ctx, out, { f0: f, dur: 0.2, vol: 0.16, at: i * 0.1 })),
 };
 
 /**
- * The ghost's breathy "wooo": a wobbling sine through a lowpass, plus a quiet
- * airy noise bed. Silent until setLevel raises it.
+ * Low growl: a rough saw at ~70 Hz through a lowpass, with a slow irregular
+ * swell. Silent until setLevel raises it (danger meter fill).
  * @param {AudioContext} ctx @param {AudioNode} out
  */
-export function createGhostLoop(ctx, out) {
+export function createGrowlLoop(ctx, out) {
   const master = ctx.createGain();
   master.gain.value = 0;
   master.connect(out);
-
   const voice = ctx.createOscillator();
-  voice.type = 'sine';
-  voice.frequency.value = 330;
-  const vibrato = ctx.createOscillator(); // slow pitch wobble = the "oooOOOooo"
-  vibrato.frequency.value = 0.7;
-  const vibAmt = ctx.createGain();
-  vibAmt.gain.value = 70;
-  vibrato.connect(vibAmt).connect(voice.frequency);
-  const tremolo = ctx.createOscillator();
-  tremolo.frequency.value = 5.5;
-  const tremAmt = ctx.createGain();
-  tremAmt.gain.value = 0.25;
+  voice.type = 'sawtooth';
+  voice.frequency.value = 70;
+  const rumble = ctx.createOscillator(); // throat flutter
+  rumble.frequency.value = 23;
+  const rumbleAmt = ctx.createGain();
+  rumbleAmt.gain.value = 0.35;
   const voiceGain = ctx.createGain();
   voiceGain.gain.value = 0.6;
-  tremolo.connect(tremAmt).connect(voiceGain.gain);
-  voice.connect(voiceGain).connect(master);
-
-  const len = ctx.sampleRate * 2;
-  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-  const air = ctx.createBufferSource();
-  air.buffer = buf;
-  air.loop = true;
-  const airF = ctx.createBiquadFilter();
-  airF.type = 'bandpass';
-  airF.frequency.value = 700;
-  airF.Q.value = 0.8;
-  const airG = ctx.createGain();
-  airG.gain.value = 0.25;
-  air.connect(airF).connect(airG).connect(master);
-
-  for (const n of [voice, vibrato, tremolo, air]) n.start();
+  rumble.connect(rumbleAmt).connect(voiceGain.gain);
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 420;
+  voice.connect(lp).connect(voiceGain).connect(master);
+  for (const n of [voice, rumble]) n.start();
   return {
-    /** @param {number} level 0..1 (danger meter fill) */
+    /** @param {number} level 0..1 */
     setLevel(level) {
-      const v = 0.22 * Math.max(0, Math.min(1, level)) ** 2;
-      master.gain.setTargetAtTime(v, ctx.currentTime, 0.15);
-      voice.frequency.setTargetAtTime(300 + 120 * level, ctx.currentTime, 0.3);
+      const k = Math.max(0, Math.min(1, level));
+      master.gain.setTargetAtTime(0.25 * k ** 2, ctx.currentTime, 0.15);
+      voice.frequency.setTargetAtTime(65 + 25 * k, ctx.currentTime, 0.3);
     },
   };
+}
+
+/**
+ * Barking chorus for the chase event: random synth barks from a few "dogs"
+ * while the level is up.
+ * @param {AudioContext} ctx @param {AudioNode} out
+ */
+export function createPackLoop(ctx, out) {
+  let level = 0;
+  setInterval(() => {
+    if (level <= 0) return;
+    for (let i = 0; i < 2; i++) if (Math.random() < 0.6) bark(ctx, out, 0.5 * level * (0.6 + Math.random() * 0.4), Math.random() * 0.35);
+  }, 400);
+  return { setLevel(l) { level = l; } };
 }
