@@ -5,7 +5,7 @@ import * as THREE from 'three';
 
 let gradient = null;
 /** 3 flat light bands instead of smooth shading. */
-function gradientMap() {
+export function gradientMap() {
   if (!gradient) {
     gradient = new THREE.DataTexture(new Uint8Array([110, 190, 255]), 3, 1, THREE.RedFormat);
     gradient.minFilter = gradient.magFilter = THREE.NearestFilter;

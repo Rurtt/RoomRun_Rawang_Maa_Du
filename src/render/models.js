@@ -1,0 +1,236 @@
+// Models load by name from /models/<file>.glb. When the file is missing, a
+// code-built stand-in shows instead, styled to look decent on camera.
+// Handover spec: 1 unit = 1 m, origin at the feet/base centre, front faces +Z.
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import { toonMaterial, addOutline, gradientMap } from './toon.js';
+
+/** Stand-in name -> GLB file name (design section 7). */
+const FILE_FOR = { kid: 'kid', ghost: 'ghost', dog: 'dog', jar: 'water_jar', cart: 'food_cart', tuktuk: 'tuk_tuk', coin: 'coin' };
+
+/**
+ * @param {{ airborne: boolean, stumbleT: number, speedMps: number }} player
+ * @returns {'idle'|'run'|'jump'|'stumble'} clip to play
+ */
+export function animationFor(player) {
+  if (player.airborne) return 'jump';
+  if (player.stumbleT > 0) return 'stumble';
+  if (player.speedMps < 0.5) return 'idle';
+  return 'run';
+}
+
+// ---------------------------------------------------------------- stand-ins
+
+function mesh(geo, mat, parent, x = 0, y = 0, z = 0, outline = 0.025) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, z);
+  if (outline) addOutline(m, outline);
+  parent.add(m);
+  return m;
+}
+/** Capsule lying along Y whose top is at the parent origin (a limb hanging from a joint). */
+function limb(radius, length, mat, parent) {
+  return mesh(new THREE.CapsuleGeometry(radius, length, 4, 10), mat, parent, 0, -(length / 2 + radius), 0, 0.02);
+}
+
+function kid() {
+  const g = new THREE.Group();
+  const skin = toonMaterial(0xf0b88e), shirt = toonMaterial(0xffffff), shorts = toonMaterial(0x1f2f6a);
+  const hair = toonMaterial(0x1a1418), shoe = toonMaterial(0x161616), sock = toonMaterial(0xf4f4f4);
+  const bag = toonMaterial(0xe8413a), dark = toonMaterial(0x111111), cheek = toonMaterial(0xff9a9a);
+  const body = new THREE.Group(); // squash/stretch pivot at the feet
+  g.add(body);
+
+  const legs = [-1, 1].map((s) => {
+    const hip = new THREE.Group(); hip.position.set(s * 0.1, 0.56, 0); body.add(hip);
+    limb(0.075, 0.28, skin, hip);
+    mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.12, 10), sock, hip, 0, -0.42, 0, 0.015);
+    mesh(new THREE.BoxGeometry(0.15, 0.09, 0.24), shoe, hip, 0, -0.51, 0.04, 0.02);
+    return hip;
+  });
+  mesh(new THREE.CylinderGeometry(0.2, 0.21, 0.2, 14), shorts, body, 0, 0.6, 0);
+  mesh(new THREE.CapsuleGeometry(0.19, 0.2, 4, 14), shirt, body, 0, 0.86, 0);
+  mesh(new THREE.BoxGeometry(0.06, 0.05, 0.02), shorts, body, -0.09, 0.95, 0.19, 0); // school badge
+  mesh(new THREE.BoxGeometry(0.3, 0.34, 0.14), bag, body, 0, 0.9, -0.24); // backpack faces the camera
+  mesh(new THREE.BoxGeometry(0.22, 0.12, 0.05), toonMaterial(0xffd23f), body, 0, 0.82, -0.32, 0.015);
+
+  const head = new THREE.Group(); head.position.y = 1.13; body.add(head);
+  mesh(new THREE.SphereGeometry(0.24, 18, 14), skin, head);
+  mesh(new THREE.SphereGeometry(0.255, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.52), hair, head, 0, 0.02, -0.01, 0);
+  mesh(new THREE.SphereGeometry(0.245, 14, 10, Math.PI * 0.6, Math.PI * 0.8, Math.PI * 0.3, Math.PI * 0.45), hair, head, 0, 0, -0.012, 0);
+  for (const s of [-1, 1]) {
+    mesh(new THREE.SphereGeometry(0.035, 10, 8), dark, head, s * 0.085, 0.0, 0.215, 0);
+    mesh(new THREE.SphereGeometry(0.035, 8, 6), cheek, head, s * 0.15, -0.07, 0.18, 0).scale.set(1, 0.6, 0.5);
+  }
+
+  const arms = [-1, 1].map((s) => {
+    const shoulder = new THREE.Group(); shoulder.position.set(s * 0.25, 0.98, 0); body.add(shoulder);
+    mesh(new THREE.CapsuleGeometry(0.065, 0.08, 4, 10), shirt, shoulder, 0, -0.08, 0, 0.02);
+    limb(0.05, 0.2, skin, shoulder).position.y = -0.2;
+    return shoulder;
+  });
+  g.userData.rig = { body, legs, arms, head };
+  return g;
+}
+
+function ghost() {
+  const g = new THREE.Group();
+  const robe = new THREE.MeshToonMaterial({ color: 0xf4f4ff, emissive: 0x8a7cff, emissiveIntensity: 0.3, gradientMap: gradientMap() });
+  const hair = toonMaterial(0x0e0c14), dark = toonMaterial(0x111111), face = toonMaterial(0xe8f0ff);
+  const float = new THREE.Group(); g.add(float);
+  const pts = [[0, 1.75], [0.42, 1.68], [0.55, 1.25], [0.5, 0.65], [0.72, 0.12], [0.5, 0.18], [0.3, 0.05], [0.12, 0.16], [0, 0.1]]
+    .map(([a, b]) => new THREE.Vector2(a, b)).reverse(); // lathe wants bottom-to-top for outward faces
+  mesh(new THREE.LatheGeometry(pts, 20), robe, float, 0, 0, 0, 0.03);
+  mesh(new THREE.SphereGeometry(0.4, 18, 14), face, float, 0, 1.78, 0.04, 0.03);
+  // long black hair: cap plus a curtain down the back (what the camera mostly sees)
+  mesh(new THREE.SphereGeometry(0.43, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), hair, float, 0, 1.8, 0, 0.03);
+  mesh(new THREE.CylinderGeometry(0.42, 0.48, 0.6, 18, 1, true, Math.PI * 0.62, Math.PI * 0.76), hair, float, 0, 1.58, -0.02, 0.03);
+  for (const s of [-1, 1]) {
+    mesh(new THREE.CylinderGeometry(0.1, 0.16, 0.8, 10, 1, true), hair, float, s * 0.34, 1.45, 0.12, 0.02); // side locks framing the face
+    mesh(new THREE.SphereGeometry(0.075, 12, 10), dark, float, s * 0.14, 1.8, 0.4, 0).scale.set(1, 1.35, 0.6);
+    mesh(new THREE.SphereGeometry(0.022, 8, 6), toonMaterial(0xffffff), float, s * 0.14 + 0.02, 1.84, 0.44, 0);
+    const arm = mesh(new THREE.CapsuleGeometry(0.09, 0.55, 4, 10), robe, float, s * 0.45, 1.25, 0.35, 0.025);
+    arm.rotation.x = Math.PI / 2 - 0.35;
+  }
+  mesh(new THREE.TorusGeometry(0.05, 0.018, 6, 14), dark, float, 0, 1.64, 0.4, 0);
+  g.userData.robe = robe;
+  g.userData.float = float;
+  return g;
+}
+
+function dog() {
+  const g = new THREE.Group();
+  const fur = toonMaterial(0xc88a4a), dark = toonMaterial(0x6a4020), nose = toonMaterial(0x1a1a1a), belly = toonMaterial(0xf0d0a0);
+  const body = mesh(new THREE.CapsuleGeometry(0.24, 0.8, 4, 12), fur, g, 0, 0.26, 0);
+  body.rotation.z = Math.PI / 2;
+  mesh(new THREE.SphereGeometry(0.2, 12, 8), belly, g, 0.1, 0.16, 0.1, 0).scale.set(2.2, 0.6, 1);
+  mesh(new THREE.SphereGeometry(0.25, 14, 10), fur, g, 0.68, 0.3, 0.12);
+  mesh(new THREE.BoxGeometry(0.2, 0.14, 0.18), fur, g, 0.88, 0.24, 0.14);
+  mesh(new THREE.SphereGeometry(0.045, 8, 6), nose, g, 0.99, 0.28, 0.14, 0);
+  for (const s of [-1, 1]) {
+    const ear = mesh(new THREE.ConeGeometry(0.08, 0.18, 6), dark, g, 0.64, 0.52, 0.12 + s * 0.13, 0.015);
+    ear.rotation.x = s * 0.4;
+    mesh(new THREE.BoxGeometry(0.05, 0.015, 0.04), nose, g, 0.84, 0.36, 0.14 + s * 0.08, 0); // sleepy closed eyes
+  }
+  for (const [x, z] of [[0.45, 0.22], [0.3, 0.26], [-0.4, 0.2], [-0.5, 0.24]]) mesh(new THREE.CapsuleGeometry(0.06, 0.18, 4, 8), fur, g, x, 0.07, z, 0.015).rotation.x = Math.PI / 2;
+  const tail = mesh(new THREE.CapsuleGeometry(0.05, 0.35, 4, 8), dark, g, -0.72, 0.2, 0.1, 0.015);
+  tail.rotation.z = 1.2;
+  return g;
+}
+
+function jar() {
+  const g = new THREE.Group();
+  const pts = [[0, 0], [0.34, 0.02], [0.5, 0.3], [0.52, 0.55], [0.4, 0.82], [0.33, 0.86], [0.36, 0.92], [0.3, 0.92], [0.28, 0.85], [0, 0.85]]
+    .map(([a, b]) => new THREE.Vector2(a, b));
+  mesh(new THREE.LatheGeometry(pts, 18), toonMaterial(0x5a2e1a), g, 0, 0, 0, 0.03);
+  mesh(new THREE.TorusGeometry(0.5, 0.03, 6, 24), toonMaterial(0xd8a040), g, 0, 0.5, 0, 0).rotation.x = Math.PI / 2;
+  mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.02, 18), toonMaterial(0x2a3a5a), g, 0, 0.84, 0, 0); // water
+  return g;
+}
+
+function cart() {
+  const g = new THREE.Group();
+  const red = toonMaterial(0xe83a3a), steel = toonMaterial(0xc8d2dc), tire = toonMaterial(0x1e1e1e), pole = toonMaterial(0x888888);
+  mesh(new THREE.BoxGeometry(1.7, 0.95, 0.95), steel, g, 0, 0.88, 0);
+  mesh(new THREE.BoxGeometry(1.72, 0.18, 0.97), red, g, 0, 1.2, 0, 0.02);
+  mesh(new THREE.BoxGeometry(1.4, 0.45, 0.7), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xfff0c0).multiplyScalar(0.95) }), g, 0, 1.55, 0, 0.02);
+  for (const s of [-1, 1]) mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.1, 6), pole, g, s * 0.78, 1.85, -0.35, 0.015);
+  mesh(new THREE.BoxGeometry(2.0, 0.1, 1.3), red, g, 0, 2.42, -0.05);
+  for (let i = 0; i < 5; i++) mesh(new THREE.BoxGeometry(0.2, 0.1, 1.31), toonMaterial(0xffffff), g, -0.8 + i * 0.4, 2.42, -0.05, 0);
+  for (const s of [-1, 1]) mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.1, 14), tire, g, s * 0.62, 0.3, 0.5).rotation.x = Math.PI / 2;
+  return g;
+}
+
+function tuktuk() {
+  const g = new THREE.Group();
+  const body = toonMaterial(0xe83a3a), trim = toonMaterial(0xffd23f), roof = toonMaterial(0x1f6f4f), tire = toonMaterial(0x1e1e1e);
+  const seat = toonMaterial(0x2a1a3a), glass = toonMaterial(0x9fd8ff), chrome = toonMaterial(0xdddddd);
+  mesh(new THREE.BoxGeometry(1.4, 0.55, 1.4), body, g, 0, 0.6, -0.55); // rear passenger tub
+  mesh(new THREE.BoxGeometry(1.2, 0.5, 0.2), seat, g, 0, 1.0, -1.1);
+  mesh(new THREE.BoxGeometry(0.75, 0.75, 1.1), body, g, 0, 0.75, 0.65); // driver cab
+  mesh(new THREE.BoxGeometry(0.7, 0.4, 0.04), glass, g, 0, 1.3, 1.08, 0.015);
+  mesh(new THREE.BoxGeometry(1.45, 0.08, 2.8), trim, g, 0, 0.38, 0);
+  for (const [x, z] of [[-0.66, -1.1], [0.66, -1.1], [-0.66, 0.0], [0.66, 0.0], [-0.3, 1.1], [0.3, 1.1]]) mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.2, 6), chrome, g, x, 1.5, z, 0.012);
+  mesh(new THREE.BoxGeometry(1.6, 0.14, 2.9), roof, g, 0, 2.12, -0.05);
+  mesh(new THREE.BoxGeometry(1.62, 0.1, 2.92), trim, g, 0, 2.02, -0.05, 0.015);
+  for (const [x, z] of [[-0.62, -0.75], [0.62, -0.75], [0, 1.05]]) mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.16, 14), tire, g, x, 0.27, z).rotation.z = Math.PI / 2;
+  mesh(new THREE.SphereGeometry(0.1, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xfff6c0).multiplyScalar(1.6) }), g, 0, 0.95, 1.22, 0.015);
+  return g;
+}
+
+function coin() {
+  const g = new THREE.Group();
+  const gold = toonMaterial(0xffd23f, { emissive: 0xff9a00, emissiveIntensity: 0.45 });
+  const disc = mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.07, 20), gold, g, 0, 0, 0, 0.02);
+  disc.rotation.x = Math.PI / 2;
+  const ring = mesh(new THREE.TorusGeometry(0.22, 0.025, 6, 20), toonMaterial(0xd89a10), g, 0, 0, 0.04, 0);
+  ring.rotation.z = Math.PI / 2;
+  return g;
+}
+
+const BUILDERS = { kid, ghost, dog, jar, cart, tuktuk, coin };
+
+/**
+ * @param {'kid'|'ghost'|'dog'|'jar'|'cart'|'tuktuk'|'coin'} name
+ * @returns {THREE.Object3D}
+ */
+export function makeStandIn(name) {
+  const build = BUILDERS[name];
+  if (!build) throw new Error(`no stand-in for model "${name}"`);
+  const obj = build();
+  obj.name = name;
+  obj.userData.standIn = true;
+  return obj;
+}
+
+// ---------------------------------------------------------------- GLB loading
+
+const loader = new GLTFLoader();
+/** @type {Map<string, Promise<{ scene: THREE.Object3D, animations: THREE.AnimationClip[] } | null>>} */
+const gltfCache = new Map();
+
+/** Re-skin a loaded model with the shared toon look and outlines. */
+function toonify(root) {
+  root.traverse((o) => {
+    if (!o.isMesh || o.name.endsWith('-outline')) return;
+    const old = o.material;
+    const color = old.color ? old.color.getHex() : 0xffffff;
+    o.material = toonMaterial(color, { map: old.map || undefined });
+    if (o.isSkinnedMesh) o.frustumCulled = false;
+    addOutline(o, 0.025);
+  });
+}
+
+function fetchGltf(name) {
+  if (!gltfCache.has(name)) {
+    const url = `/models/${FILE_FOR[name] ?? name}.glb`;
+    gltfCache.set(name, fetch(url)
+      .then((r) => (r.ok ? r.arrayBuffer() : null))
+      .then((buf) => {
+        // Vite answers a missing file with index.html: check the glTF magic first
+        if (!buf || buf.byteLength < 4 || new TextDecoder().decode(new Uint8Array(buf, 0, 4)) !== 'glTF') return null;
+        return loader.parseAsync(buf, '/models/');
+      })
+      .then((gltf) => {
+        if (!gltf) return null;
+        toonify(gltf.scene);
+        return { scene: gltf.scene, animations: gltf.animations };
+      })
+      .catch((err) => { console.warn(`model ${name}: using stand-in (${err.message})`); return null; }));
+  }
+  return gltfCache.get(name);
+}
+
+/**
+ * @param {string} name
+ * @returns {Promise<THREE.Object3D>} a new instance; GLB clips (if any) in userData.animations
+ */
+export async function loadModel(name) {
+  const gltf = await fetchGltf(name);
+  if (!gltf) return makeStandIn(/** @type {any} */ (name));
+  const obj = cloneSkinned(gltf.scene);
+  obj.name = name;
+  obj.userData.animations = gltf.animations;
+  return obj;
+}
