@@ -1,14 +1,15 @@
-// Everything that moves: the kid, the ghost, obstacles and coins, kept in sync
+// Everything that moves: the kid, the boss dog, obstacles and coins, kept in sync
 // with the sim. Meshes are keyed by sim id and pooled per kind.
 import * as THREE from 'three';
 import config from '../config.js';
-import { animationFor, loadModel, makeStandIn } from './models.js';
+import { animationFor, loadModel, makeStandIn, addEyes, BOSS_EYES } from './models.js';
+import { advanceGallop, gallopPose } from './dogPose.js';
+import { chaserBack, showChaser, eyeColor } from './chaserView.js';
 
 const KINDS = ['dog', 'jar', 'cart', 'tuktuk'];
 const COIN_Y = 0.85;
 /** Stride: one full leg cycle (two steps) per this many metres. */
 const STRIDE = 2.6;
-const GHOST_SCALE = 0.8;
 
 function padTexture() {
   const c = document.createElement('canvas');
@@ -65,7 +66,8 @@ export function createActors(scene, cfg = config) {
   kidHolder.add(kidModel);
   kidModel.add(kid);
   loadModel('kid').then((m) => {
-    if (m.userData.standIn) return;
+    // a kid GLB without Mixamo clips would slide along in a T-pose: keep the animated stand-in
+    if (m.userData.standIn || !(m.userData.animations || []).length) return;
     kidModel.remove(kid);
     kid = m;
     kidModel.add(kid);
@@ -76,20 +78,25 @@ export function createActors(scene, cfg = config) {
     }
   });
 
-  // ---- ghost
-  const ghostHolder = new THREE.Group();
-  ghostHolder.visible = false;
-  root.add(ghostHolder);
-  ghostHolder.add(blob(1.4));
-  const ghostModel = new THREE.Group();
-  ghostModel.rotation.y = Math.PI;
-  ghostHolder.add(ghostModel);
-  let ghost = makeStandIn('bossdog');
-  ghostModel.add(ghost);
-  loadModel('bossdog').then((m) => { if (!m.userData.standIn) { ghostModel.remove(ghost); ghost = m; ghostModel.add(ghost); } });
-  const calm = new THREE.Color(0xf4f4ff), angry = new THREE.Color(0xff3a4a);
-  const calmGlow = new THREE.Color(0x8a7cff), angryGlow = new THREE.Color(0xff2030);
-  let anger = 0;
+  // ---- boss dog: holder (position) > model (faces -Z) > pose (gallop bob/lean/stretch)
+  const chaserHolder = new THREE.Group();
+  chaserHolder.visible = false;
+  root.add(chaserHolder);
+  chaserHolder.add(blob(1.3));
+  const chaserModel = new THREE.Group();
+  chaserModel.rotation.y = Math.PI;
+  chaserHolder.add(chaserModel);
+  const bossPose = new THREE.Group();
+  chaserModel.add(bossPose);
+  let boss = makeStandIn('bossdog');
+  bossPose.add(boss);
+  loadModel('bossdog').then((m) => {
+    if (m.userData.standIn) return;
+    addEyes(m, BOSS_EYES);
+    bossPose.remove(boss); boss = m; bossPose.add(boss);
+  });
+  const amberEye = new THREE.Color(0xffb020), redEye = new THREE.Color(0xff2020);
+  let redness = 0;
 
   // ---- obstacles and coins, by sim id
   /** @type {Map<number, { obj: THREE.Object3D, pad?: THREE.Mesh, kind: string, hitT: number, side: number }>} */
@@ -108,14 +115,23 @@ export function createActors(scene, cfg = config) {
   let phase = 0;
   let stepKick = 0;
   let time = 0;
-  let ghostX = 0;
+  let chaserX = 0;
   let caughtT = 0;
+  let gallop = 0;
+  /** seconds left of the boss peek after a hit; peekIn eases 0..1 */
+  let peekT = 0, peekIn = 0;
+  /** stumble length when it started (1.5 s, or 2 s for a tuk-tuk), for the code tumble */
+  let tumbleTotal = 0;
   const seen = new Set();
 
   let lastX = 0, lean = 0, jumpT = 1, landT = 1;
   function syncKid(world, interp, dt) {
     const p = world.player;
-    kidHolder.position.set(interp.x, 0, -interp.z);
+    // caught: the dog has the shirt and pulls the kid back, tipping him backwards
+    const pull = world.phase === 'caught' ? Math.min(1, caughtT / 0.3) : 0;
+    kidHolder.position.set(interp.x, 0, -interp.z + pull * 0.6);
+    kidHolder.rotation.x = pull * 0.35;
+    if (p.stumbleT > tumbleTotal || p.stumbleT === 0) tumbleTotal = p.stumbleT;
     kidModel.position.y = interp.y;
     // lean into lane changes (roll toward the direction of travel)
     const vx = dt > 0 ? (interp.x - lastX) / dt : 0;
@@ -163,47 +179,65 @@ export function createActors(scene, cfg = config) {
     else if (clip === 'jump') squash = 0.04 + 0.1 * Math.max(0, p.vy / cfg.player.jumpVelocity);
     if (landT < 0.12) squash = -0.18 * (1 - landT / 0.12);
     rig.body.scale.set(1 - squash * 0.5, 1 + squash, 1 - squash * 0.5);
-    rig.body.rotation.x = clip === 'stumble' ? 0.35 + Math.sin(time * 30) * 0.08 : clip === 'run' ? 0.12 * amp : 0;
+    rig.body.rotation.x = clip === 'stumble' ? tumblePitch(p.stumbleT) : clip === 'run' ? 0.12 * amp : 0;
     rig.head.rotation.x = clip === 'stumble' ? -0.3 : 0;
+    if (clip === 'stumble') {
+      // scrambling arms and legs while down
+      rig.arms[0].rotation.x = -1.6 + Math.sin(time * 26) * 0.9; rig.arms[1].rotation.x = -1.6 - Math.sin(time * 26) * 0.9;
+      rig.legs[0].rotation.x = Math.sin(time * 22) * 0.7; rig.legs[1].rotation.x = -Math.sin(time * 22) * 0.7;
+    }
     if (world.phase === 'caught') {
-      rig.arms[0].rotation.x = -2.8; rig.arms[1].rotation.x = -2.8; // hands up!
-      rig.arms[0].rotation.z = -0.4; rig.arms[1].rotation.z = 0.4;
+      // pulled back by the shirt: arms flail
+      rig.arms[0].rotation.x = -2.6 + Math.sin(time * 24) * 0.6; rig.arms[1].rotation.x = -2.6 - Math.sin(time * 24) * 0.6;
+      rig.arms[0].rotation.z = -0.5; rig.arms[1].rotation.z = 0.5;
       rig.body.position.y = Math.abs(Math.sin(time * 18)) * 0.05;
     }
   }
 
-  function syncGhost(world, interp, dt) {
+  /** Tumble: fall forward fast, stay down, scramble back up by the end of the stumble. */
+  function tumblePitch(stumbleT) {
+    const u = tumbleTotal > 0 ? 1 - stumbleT / tumbleTotal : 1;
+    if (u < 0.2) return 1.2 * (u / 0.2);
+    if (u < 0.65) return 1.2 + Math.sin(time * 30) * 0.05;
+    return 1.2 * Math.max(0, 1 - (u - 0.65) / 0.35);
+  }
+
+  function syncChaser(world, interp, dt) {
     const ch = world.chaser;
-    const show = ch.visible || world.phase === 'caught';
-    ghostHolder.visible = show;
-    anger += ((ch.angry ? 1 : 0) - anger) * Math.min(1, dt * 5);
-    const robe = ghost.userData.robe;
-    if (robe) {
-      robe.color.copy(calm).lerp(angry, anger);
-      robe.emissive.copy(calmGlow).lerp(angryGlow, anger);
-      robe.emissiveIntensity = 0.3 + anger * 0.5;
-    }
-    if (!show) return;
-    // Visible gap 0..visibleGap is drawn 0.9..3.2 m behind the kid so the ghost stays
-    // framed between the camera and the kid (a literal 12 m would put it behind the camera).
-    const k = Math.min(1, Math.max(0, ch.gap / cfg.chaser.visibleGap));
+    peekT = Math.max(0, peekT - dt);
+    const show = showChaser(world, peekT);
+    chaserHolder.visible = show || peekIn > 0.01;
+    redness += ((eyeColor(world) === 'red' ? 1 : 0) - redness) * Math.min(1, dt * 5);
+    for (const e of boss.userData.eyes ?? []) e.material.color.copy(amberEye).lerp(redEye, redness);
     const caught = world.phase === 'caught';
     caughtT = caught ? caughtT + dt : 0;
-    const back = caught ? 0.7 : 0.9 + k * 2.3;
+    // peek: slides in from behind the camera, then back out (real gap untouched)
+    const peeking = !ch.visible && !caught && peekT > 0;
+    peekIn += ((peeking ? 1 : 0) - peekIn) * Math.min(1, dt * 8);
+    if (!chaserHolder.visible) return;
+    const lunge = caught ? Math.min(1, caughtT / 0.25) : 0;
+    let back = chaserBack(ch.gap, cfg.chaser);
+    if (!ch.visible && !caught) back = chaserBack(cfg.chaser.visibleGap * 0.5, cfg.chaser) + (1 - peekIn) * 3;
+    back += (0.4 - back) * lunge;
     const side = interp.x > 0.1 ? -1 : 1; // drift toward the road centre so it doesn't hide the kid
-    const targetX = interp.x + (caught ? 0.3 * side : side * (0.6 + k * 0.6));
-    ghostX += (targetX - ghostX) * Math.min(1, dt * 4);
-    ghostHolder.position.set(ghostX, 0, -interp.z + back);
-    const float = ghost.userData.float ?? ghost;
-    float.position.y = 0.35 + Math.sin(time * 2.2) * 0.15;
-    float.rotation.z = Math.sin(time * 1.7) * 0.08;
-    // caught: the ghost spins round to face the camera, "boo"
-    // chasing: turned 3/4 toward the camera so its face reads; caught: full turn, "boo"
-    const turn = caught ? Math.min(1, caughtT / 0.45) : 0;
-    const chaseYaw = Math.PI + side * 1.1; // face turns toward the road centre: profile to the camera
-    ghostModel.rotation.y = chaseYaw + turn * (2 * Math.PI - chaseYaw);
-    const pop = caught ? 1 + Math.sin(Math.min(1, caughtT / 0.3) * Math.PI) * 0.25 : 1;
-    ghostModel.scale.setScalar(GHOST_SCALE * pop);
+    const targetX = interp.x + side * (caught ? 0.5 : 0.7); // caught: beside the kid so the head reads on camera
+    chaserX += (targetX - chaserX) * Math.min(1, dt * 4);
+    // caught: the kid is pulled back 0.6 m, the dog stays just behind him
+    chaserHolder.position.set(chaserX, 0, -interp.z + back + (caught ? 0.6 * lunge : 0));
+    gallop = advanceGallop(gallop, caught ? 0 : Math.max(ch.speedMps, 4), dt);
+    const pose = gallopPose(gallop);
+    if (caught) {
+      // rear up, teeth in the back of the shirt, tug side to side
+      bossPose.position.y = 0.1 * lunge;
+      bossPose.rotation.set(-0.55 * lunge, 0, Math.sin(time * 14) * 0.12 * lunge);
+      bossPose.scale.set(1, 1, 1);
+      chaserModel.rotation.y = Math.PI + side * 0.6 * lunge; // head turned in toward the shirt
+    } else {
+      chaserModel.rotation.y = Math.PI;
+      bossPose.position.y = pose.bob;
+      bossPose.rotation.set(pose.lean, 0, 0);
+      bossPose.scale.set(1, 1 / Math.sqrt(pose.stretch), pose.stretch);
+    }
   }
 
   let lastTrack = null;
@@ -268,11 +302,12 @@ export function createActors(scene, cfg = config) {
     sync(world, alpha, interp, dt) {
       time += dt;
       syncKid(world, interp, dt);
-      syncGhost(world, interp, dt);
+      syncChaser(world, interp, dt);
       syncTrack(world, dt);
     },
     onEvent(name) {
-      if (name === 'run-start') { phase = 0; }
+      if (name === 'run-start') { phase = 0; peekT = 0; peekIn = 0; }
+      else if (name === 'hit') peekT = cfg.effects.peekTime;
       else if (name === 'jump') jumpT = 0;
       else if (name === 'land') landT = 0;
     },
@@ -284,6 +319,6 @@ export function createActors(scene, cfg = config) {
       phase += (next - phase) * 0.35;
     },
     kidHolder,
-    ghostHolder,
+    chaserHolder,
   };
 }
