@@ -15,7 +15,7 @@ import { createEnvironment } from './render/environment.js';
 import { createActors } from './render/actors.js';
 import { createCameraRig } from './render/cameraRig.js';
 import { createEffects } from './render/effects.js';
-import { slowMoTarget } from './render/timeScale.js';
+import { slowMoTarget, createHitStop } from './render/timeScale.js';
 import { createHud } from './hud/hud.js';
 import { meterFill } from './hud/format.js';
 import { createAudio, soundForEvent } from './audio/audio.js';
@@ -36,6 +36,7 @@ const hudRoot = document.createElement('div');
 document.body.append(hudRoot);
 const hud = createHud(hudRoot);
 const audio = createAudio();
+const hitStop = createHitStop(config);
 // browsers only allow sound after a user gesture
 for (const type of ['keydown', 'pointerdown']) window.addEventListener(type, () => audio.unlock(), { once: true });
 
@@ -55,6 +56,8 @@ const extra = { phoneLost: false, tunnelUrl: /** @type {string|null} */ (null) }
 
 function emit(events) {
   for (const e of events) {
+    if (e === 'hit') hitStop.trigger();
+    else if (e === 'caught' || e === 'run-start') hitStop.reset();
     actors.onEvent(e);
     rig.onEvent(e);
     effects.onEvent(e);
@@ -132,7 +135,7 @@ function tick(now) {
   if (dt > 0) stats.fps += (1 / dt - stats.fps) * 0.05;
   panel.update();
   timeScale += (slowMoTarget(world) - timeScale) * Math.min(1, Math.max(0, dt) * 12);
-  const scaled = Math.min(dt, config.loop.maxFrameDt) * timeScale;
+  const scaled = Math.min(dt, config.loop.maxFrameDt) * timeScale * hitStop.factor(Math.max(0, dt));
   renderDt = scaled;
   if (!devPaused) loop.frame(scaled);
   requestAnimationFrame(tick);

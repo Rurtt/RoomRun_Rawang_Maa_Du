@@ -11,3 +11,21 @@ export function slowMoTarget(world, cfg = config) {
   const gap = world.chaser.gap;
   return closing > 0.5 && gap < j.slowMoMaxGap && gap / closing < j.slowMoWindow ? j.slowMoScale : 1;
 }
+
+/**
+ * Hit-stop: on impact the game clock freezes for cfg.effects.hitStop real seconds.
+ * main.js multiplies frame time by factor(); caught and restart cancel it.
+ */
+export function createHitStop(cfg = config) {
+  let left = 0;
+  return {
+    trigger() { left = cfg.effects.hitStop; },
+    reset() { left = 0; },
+    /** @param {number} realDt @returns {0|1} */
+    factor(realDt) {
+      if (left <= 0) return 1;
+      left -= realDt;
+      return 0;
+    },
+  };
+}
