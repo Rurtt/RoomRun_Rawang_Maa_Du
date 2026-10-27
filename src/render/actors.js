@@ -426,8 +426,9 @@ export function createActors(scene, cfg = config) {
       a.pad.position.set(x, 0.015, z);
       a.pad.visible = !o.hit;
       if (o.hit) a.hitT += dt;
-      // a hit sleeping dog wakes and becomes a heel dog: the lying one just goes (never flies)
-      a.obj.visible = !(o.hit && o.kind === 'dog');
+      // a hit sleeping dog wakes and becomes a heel dog (the lying one just goes, never flies);
+      // a hit jar breaks into the splash effects.js draws
+      a.obj.visible = !(o.hit && (o.kind === 'dog' || o.kind === 'jar'));
       // hit: shoved aside and tipped over (the run goes on)
       const h = Math.min(1, a.hitT / 0.35);
       const ease = 1 - (1 - h) * (1 - h);

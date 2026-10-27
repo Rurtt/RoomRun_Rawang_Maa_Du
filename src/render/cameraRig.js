@@ -56,7 +56,8 @@ export function createCameraRig(camera, cfg = config) {
       if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
     },
     onEvent(name) {
-      if (name === 'hit') trauma = Math.min(1, trauma + 0.6);
+      if (name === 'hit') trauma = Math.min(1, trauma + 0.8);
+      else if (name === 'hit-tuktuk') trauma = 1; // the biggest crash
       else if (name === 'caught') trauma = 1;
       else if (name === 'land') bob = 1;
     },
