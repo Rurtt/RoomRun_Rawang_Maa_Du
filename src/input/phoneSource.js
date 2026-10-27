@@ -4,9 +4,14 @@
 // Clock: each phone stamps samples with its own performance.now(). Per hand,
 // offset = min(receive - ts) seen so far, i.e. the least-delayed sample; ts +
 // offset puts samples on the game clock with the network jitter taken out.
+// The phone clock restarts on a page reload (hello resets the offset) and can
+// stall while the screen is locked (samples arrive persistently late: re-baseline).
 import config from '../config.js';
 
 const GRAVITY_SMOOTH = 0.1; // low-pass for phones that only report accelerationIncludingGravity
+const LATE_MS = 500; // a sample this much later than the baseline predicts is "late"
+const LATE_RUN = 10; // this many late samples in a row: the phone clock jumped, re-baseline
+const FUTURE_MS = 5000; // samples claiming to arrive this much early are bogus
 
 /**
  * @param {{ url?: string, detector: ReturnType<typeof import('./motion.js').createMotionDetector>, cfg?: typeof config.phone }} opts
@@ -17,7 +22,9 @@ export function createPhoneSource({ url, detector, cfg = config.phone }) {
   const gravity = { L: null, R: null };
   /** @type {Record<'L'|'R', number|null>} */
   const rtt = { L: null, R: null };
-  let lastSample = -Infinity;
+  const late = { L: 0, R: 0 };
+  /** last motion sample per hand, game clock; hands never seen stay -Infinity */
+  const lastSample = { L: -Infinity, R: -Infinity };
   let everConnected = false;
 
   /** @param {any} msg @param {number} recvMs game clock at arrival */
@@ -26,10 +33,19 @@ export function createPhoneSource({ url, detector, cfg = config.phone }) {
     const hand = msg.hand === 'L' || msg.hand === 'R' ? msg.hand : null;
     if (msg.t === 'rtt' && hand && typeof msg.ms === 'number') {
       rtt[hand] = msg.ms;
-    } else if (msg.t === 'm' && hand && typeof msg.ts === 'number') {
-      lastSample = recvMs;
+    } else if (msg.t === 'hello' && hand) {
+      // (re)connected phone page: its clock may have restarted
+      offset[hand] = Infinity;
+      gravity[hand] = null;
+      late[hand] = 0;
+    } else if (msg.t === 'm' && hand && Number.isFinite(msg.ts)) {
+      const delay = recvMs - msg.ts;
+      if (Number.isFinite(offset[hand]) && delay < offset[hand] - FUTURE_MS) return;
+      late[hand] = delay - offset[hand] > LATE_MS ? late[hand] + 1 : 0;
+      offset[hand] = late[hand] >= LATE_RUN ? delay : Math.min(offset[hand], delay);
+      if (late[hand] >= LATE_RUN) late[hand] = 0;
+      lastSample[hand] = recvMs;
       everConnected = true;
-      offset[hand] = Math.min(offset[hand], recvMs - msg.ts);
       let a = msg.a;
       if ((!a || a.some((x) => x == null)) && Array.isArray(msg.ag) && msg.ag.every((x) => typeof x === 'number')) {
         // no linear acceleration on this phone: take gravity out ourselves
@@ -59,7 +75,11 @@ export function createPhoneSource({ url, detector, cfg = config.phone }) {
     rtt,
     /** True once any phone has sent motion: lets the HUD tell "lost" from "never used". */
     get everConnected() { return everConnected; },
-    connected(nowMs) { return nowMs - lastSample <= cfg.disconnectAfterMs; },
+    /** False until a phone sends motion, and when any phone that has sent motion goes quiet. */
+    connected(nowMs) {
+      const seen = /** @type {const} */ (['L', 'R']).filter((h) => lastSample[h] > -Infinity);
+      return seen.length > 0 && seen.every((h) => nowMs - lastSample[h] <= cfg.disconnectAfterMs);
+    },
     read(nowMs) { return detector.read(nowMs); },
   };
 }

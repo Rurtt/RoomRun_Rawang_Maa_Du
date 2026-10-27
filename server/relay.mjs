@@ -54,7 +54,8 @@ export async function createRelay({ port, staticDir, logDir }) {
     createReadStream(file).pipe(res);
   });
 
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  // messages are ~200 bytes; anything big is not ours (the tunnel URL is public)
+  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
   /** @type {Set<import('ws').WebSocket>} */
   const games = new Set();
   /** @type {Map<import('ws').WebSocket, 'L'|'R'>} */
@@ -74,10 +75,12 @@ export async function createRelay({ port, staticDir, logDir }) {
       } else if (msg.t === 'hello' && msg.role === 'phone' && (msg.hand === 'L' || msg.hand === 'R')) {
         phones.set(ws, msg.hand);
         toGames(text);
-      } else if (msg.t === 'm') {
-        toGames(text);
+      } else if (msg.t === 'm' && phones.has(ws)) {
+        // only registered phones, and only as the hand they registered
+        const sample = { ...msg, hand: phones.get(ws) };
+        toGames(JSON.stringify(sample));
         if (!log) { mkdirSync(logDir, { recursive: true }); log = createWriteStream(logPath, { flags: 'a' }); }
-        log.write(JSON.stringify({ ...msg, rt: Date.now() }) + '\n');
+        log.write(JSON.stringify({ ...sample, rt: Date.now() }) + '\n');
       } else if (msg.t === 'ping') {
         ws.send(JSON.stringify({ t: 'pong', id: msg.id, ts: msg.ts }));
         const hand = phones.get(ws);

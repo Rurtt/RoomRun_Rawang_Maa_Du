@@ -94,3 +94,23 @@ test('garbage and unknown messages do not crash the relay', async () => {
   phone.send({ t: 'm', hand: 'L', ts: 1, a: [0, 0, 0], ag: [0, 0, 0], r: [0, 0, 0] });
   await until(() => game.inbox.some((x) => x.t === 'm'));
 });
+
+test('motion from a socket that never said phone hello is dropped; hand is the registered one', async () => {
+  const game = await connect({ t: 'hello', role: 'game' });
+  const stranger = await connect({ t: 'hello', role: 'game' });
+  stranger.send({ t: 'm', hand: 'L', ts: 1, a: [0, 0, 0], ag: [0, 0, 0], r: [0, 0, 0] });
+  const phone = await connect({ t: 'hello', role: 'phone', hand: 'R' });
+  phone.send({ t: 'm', hand: 'L', ts: 2, a: [0, 0, 0], ag: [0, 0, 0], r: [0, 0, 0] });
+  await until(() => game.inbox.some((x) => x.t === 'm'));
+  await new Promise((r) => setTimeout(r, 50));
+  const ms = game.inbox.filter((x) => x.t === 'm');
+  expect(ms).toHaveLength(1);
+  expect(ms[0]).toMatchObject({ hand: 'R', ts: 2 });
+});
+
+test('oversized messages are refused', async () => {
+  const phone = await connect({ t: 'hello', role: 'phone', hand: 'L' });
+  const closed = new Promise((r) => phone.ws.once('close', r));
+  phone.ws.send('x'.repeat(100_000));
+  await closed;
+});

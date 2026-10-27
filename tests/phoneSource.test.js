@@ -53,3 +53,47 @@ test('rtt messages fill rtt per hand; junk is ignored', () => {
   src.handleMessage(null, 0);
   expect(src.rtt).toEqual({ L: null, R: 48 });
 });
+
+/** Swing with explicit phone clocks per hand, from game time `from` for `ms`. */
+function swingWith(src, from, ms, clockOf) {
+  for (let t = from; t < from + ms; t += DT) {
+    const s = 10 * Math.sin(2 * Math.PI * 2.5 * (t / 1000));
+    src.handleMessage(m('L', t + clockOf('L', t), s), t + 30);
+    src.handleMessage(m('R', t + clockOf('R', t), -s), t + 30);
+    src.read(t + 30);
+  }
+}
+
+test('phone page reload (clock restarts, hello re-sent) keeps running working', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  swingWith(src, 0, 3000, () => 1e6);
+  // the reloaded page's performance.now() starts near 0 again
+  src.handleMessage({ t: 'hello', role: 'phone', hand: 'L' }, 3030);
+  src.handleMessage({ t: 'hello', role: 'phone', hand: 'R' }, 3030);
+  swingWith(src, 3000, 3000, () => -3000);
+  expect(src.read(6030).speed).toBeGreaterThan(0.9);
+});
+
+test('phone clock stalls during a screen lock (no reconnect) -> re-baselines, running works again', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  swingWith(src, 0, 3000, () => 1e6);
+  // after the lock, samples carry timestamps 5 s behind where they used to be
+  swingWith(src, 3000, 3000, () => 1e6 - 5000);
+  expect(src.read(6030).speed).toBeGreaterThan(0.9);
+});
+
+test('one phone of two goes silent -> not connected (HUD shows the drop)', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  swingWith(src, 0, 2000, () => 0);
+  for (let t = 2000; t < 3300; t += DT) src.handleMessage(m('L', t, 0), t + 30);
+  expect(src.connected(3300)).toBe(false);
+});
+
+test('a sample with an absurd timestamp cannot wreck the clock', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  swingWith(src, 0, 1500, () => 0);
+  src.handleMessage(m('L', 1e15, 0), 1530);
+  src.handleMessage(m('R', Number.NaN, 0), 1530);
+  swingWith(src, 1500, 1500, () => 0);
+  expect(src.read(3030).speed).toBeGreaterThan(0.9);
+});
