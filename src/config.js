@@ -13,6 +13,8 @@ export default {
   track: { spawnAhead: 120, despawnBehind: 20, startClear: 30, minRowSpacing: 14, maxRowSpacing: 26,
            singleOnlyUntil: 60, coinRowLength: 5, coinSpacing: 2, coinRowChance: 0.6,
            hitHalfDepth: 0.8, laneHitHalfWidth: 1.0, jumpClearHeight: 0.6, coinPickupDepth: 1.0 },
+  // last ~1 s before a catch the game runs at slowMoScale (the grab reads on video)
+  juice: { slowMoScale: 0.4, slowMoWindow: 1.0, slowMoMaxGap: 4 },
   motion: { /* filled in Task 12 */ },
   phone: { disconnectAfterMs: 1000 },
 };

@@ -112,10 +112,17 @@ export function createActors(scene, cfg = config) {
   let caughtT = 0;
   const seen = new Set();
 
+  let lastX = 0, lean = 0, jumpT = 1, landT = 1;
   function syncKid(world, interp, dt) {
     const p = world.player;
     kidHolder.position.set(interp.x, 0, -interp.z);
     kidModel.position.y = interp.y;
+    // lean into lane changes (roll toward the direction of travel)
+    const vx = dt > 0 ? (interp.x - lastX) / dt : 0;
+    lastX = interp.x;
+    lean += (Math.max(-0.35, Math.min(0.35, -vx * 0.025)) - lean) * Math.min(1, dt * 14);
+    kidHolder.rotation.z = lean;
+    jumpT += dt; landT += dt;
     const clip = world.phase === 'title' || world.phase === 'caught' ? 'idle' : animationFor(p);
 
     if (kidMixer) {
@@ -146,8 +153,11 @@ export function createActors(scene, cfg = config) {
       rig.arms[0].rotation.z = 0; rig.arms[1].rotation.z = 0;
       rig.body.position.y = Math.abs(s) * 0.09 * amp + (clip === 'idle' ? Math.sin(time * 2.5) * 0.01 : 0);
     }
-    // squash on each foot plant, stretch between
-    const squash = clip === 'run' ? 0.05 * Math.cos(phase * 2) * amp - stepKick * 0.06 : 0;
+    // squash on each foot plant, stretch between; crouch at take-off, stretch rising, squash on landing
+    let squash = clip === 'run' ? 0.05 * Math.cos(phase * 2) * amp - stepKick * 0.06 : 0;
+    if (jumpT < 0.08) squash = -0.22;
+    else if (clip === 'jump') squash = p.vy > 0 ? 0.14 : 0.04;
+    if (landT < 0.12) squash = -0.18 * (1 - landT / 0.12);
     rig.body.scale.set(1 - squash * 0.5, 1 + squash, 1 - squash * 0.5);
     rig.body.rotation.x = clip === 'stumble' ? 0.35 + Math.sin(time * 30) * 0.08 : clip === 'run' ? 0.12 * amp : 0;
     rig.head.rotation.x = clip === 'stumble' ? -0.3 : 0;
@@ -259,6 +269,8 @@ export function createActors(scene, cfg = config) {
     },
     onEvent(name) {
       if (name === 'run-start') { phase = 0; }
+      else if (name === 'jump') jumpT = 0;
+      else if (name === 'land') landT = 0;
     },
     onSteps(n) {
       if (n <= 0) return;

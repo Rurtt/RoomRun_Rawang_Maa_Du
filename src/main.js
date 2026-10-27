@@ -10,6 +10,9 @@ import { createWorld, startRun, stepWorld, triggerChase } from './sim/world.js';
 import { createRenderer } from './render/renderer.js';
 import { createEnvironment } from './render/environment.js';
 import { createActors } from './render/actors.js';
+import { createCameraRig } from './render/cameraRig.js';
+import { createEffects } from './render/effects.js';
+import { slowMoTarget } from './render/timeScale.js';
 import { createHud } from './hud/hud.js';
 
 document.title = config.title;
@@ -18,6 +21,10 @@ const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('game')
 const view = createRenderer(canvas);
 const environment = createEnvironment(view.scene);
 const actors = createActors(view.scene);
+const rig = createCameraRig(view.camera);
+const overlay = document.createElement('div');
+document.body.append(overlay);
+const effects = createEffects(view.scene, overlay);
 const hudRoot = document.createElement('div');
 document.body.append(hudRoot);
 const hud = createHud(hudRoot);
@@ -36,6 +43,8 @@ const extra = { phoneLost: false, tunnelUrl: /** @type {string|null} */ (null) }
 function emit(events) {
   for (const e of events) {
     actors.onEvent(e);
+    rig.onEvent(e);
+    effects.onEvent(e);
     hud.onEvent(e);
   }
 }
@@ -45,14 +54,15 @@ function step(dt) {
   prev.distance = p.distance; prev.x = p.x; prev.y = p.y;
   const input = hub.read(performance.now());
   actors.onSteps(input.steps);
+  rig.onSteps(input.steps);
   emit(stepWorld(world, input, dt));
 }
 
-let lastRender = performance.now();
+/** Dev only: Playwright checks freeze the live loop while they drive soip.simulate(). */
+let devPaused = false;
+/** Render seconds since the last frame, already time-scaled (slow-mo). */
+let renderDt = 0;
 function render(alpha) {
-  const now = performance.now();
-  const dt = Math.min(0.1, (now - lastRender) / 1000);
-  lastRender = now;
   const p = world.player;
   // a restart jumps distance back to 0: don't smear across it
   const fresh = Math.abs(p.distance - prev.distance) > 5;
@@ -61,12 +71,14 @@ function render(alpha) {
   interp.x = lerp(prev.x, p.x);
   interp.y = lerp(prev.y, p.y);
   environment.update(interp.z);
-  actors.sync(world, alpha, interp, dt);
+  actors.sync(world, alpha, interp, renderDt);
+  rig.update(world, renderDt, interp);
+  effects.update(world, renderDt, interp);
   hud.update(world, extra);
-  view.camera.position.set(interp.x * 0.6, 3.1, -interp.z + 5.6);
-  view.camera.lookAt(interp.x * 0.4, 1.3, -interp.z - 8);
   view.render();
 }
+
+let timeScale = 1;
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
@@ -89,7 +101,10 @@ function tick(now) {
   last = now;
   if (dt > 0) fps += (1 / dt - fps) * 0.05;
   fpsEl.textContent = `${fps.toFixed(0)} fps`;
-  loop.frame(dt);
+  timeScale += (slowMoTarget(world) - timeScale) * Math.min(1, Math.max(0, dt) * 12);
+  const scaled = Math.min(dt, config.loop.maxFrameDt) * timeScale;
+  renderDt = scaled;
+  if (!devPaused) loop.frame(scaled);
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
@@ -98,6 +113,7 @@ requestAnimationFrame(tick);
 if (import.meta.env.DEV) {
   window.soip = {
     world, view, environment, actors, hud, hub, keyboard, config, startRun, triggerChase,
+    pause(on = true) { devPaused = on; },
     /** Step the sim `seconds` with a fixed input (lane/jump fire once), then draw one frame. */
     simulate(seconds, f = {}) {
       const frame = { speed: 0, laneDelta: 0, jump: false, steps: 0, ...f };
@@ -107,6 +123,7 @@ if (import.meta.env.DEV) {
         emit(stepWorld(world, frame, config.loop.stepDt));
         frame.laneDelta = 0; frame.jump = false;
       }
+      renderDt = 1 / 60;
       render(1);
     },
   };
