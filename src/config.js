@@ -7,7 +7,7 @@ export default {
   player: { maxSpeed: 12, laneWidth: 2.5, laneChangeTime: 0.15, laneCooldown: 0, // keyboard: none; phones have motion.gestureCooldownMs
             jumpVelocity: 7, gravity: 20, stumbleTime: 1.5, stumbleFactor: 0.2,
             startSpeedThreshold: 0.2 },
-  chaser: { speed: 6, startGap: 20, maxGap: 50, visibleGap: 12, meterRange: 30 },
+  chaser: { speed: 6, startGap: 20, maxGap: 50, visibleGap: 5, meterRange: 30 }, // visibleGap 5: drawn 0.9..2.2 m behind, close to true
   chase: { warningTime: 3, activeTime: 30, speedMultiplier: 1.4, firstAt: 60, every: 90,
            rewardCoins: 50, rewardGap: 15, obstacleDensity: 0.5 },
   track: { spawnAhead: 120, despawnBehind: 20, startClear: 30, minRowSpacing: 14, maxRowSpacing: 26,

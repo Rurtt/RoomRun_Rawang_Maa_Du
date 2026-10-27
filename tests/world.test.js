@@ -50,11 +50,11 @@ test('title has obstacles ahead to look at', () => {
   const w = createWorld(config, 1); expect(w.track.obstacles.length).toBeGreaterThan(0);
 });
 
-test('chaser-near fires when the gap drops under visibleGap', () => {
+test('chaser-near fires when the gap drops under visibleGap (5 m: the dog only shows when it is really close)', () => {
   const w = createWorld(config, 1); startRun(w); expect(w.chaser.visible).toBe(false);
   const { events, t } = runUntil(w, idle, (e) => e.includes('chaser-near'), 5);
   expect(count(events, 'chaser-near')).toBe(1); expect(w.chaser.visible).toBe(true);
-  expect(t).toBeCloseTo((20 - 12) / 6, 1);
+  expect(t).toBeCloseTo((20 - 5) / 6, 1);
 });
 
 test('default: no lane cooldown, a quick double tap crosses two lanes', () => {
