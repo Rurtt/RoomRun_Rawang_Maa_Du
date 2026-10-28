@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { headYaw, startleWeight, ease, PEOPLE } from '../src/render/peopleLogic.js';
+import { headYaw, lookYaw, startleWeight, ease, PEOPLE } from '../src/render/peopleLogic.js';
 
 describe('headYaw', () => {
   it('is 0 when the kid is out of range', () => expect(headYaw(0, 0, 0, 0, 20)).toBe(0));
@@ -28,4 +28,8 @@ describe('ease', () => {
     expect(v).toBeGreaterThan(0); expect(v).toBeLessThan(1);
     expect(ease(0, 1, 8, 10)).toBeCloseTo(1);
   });
+});
+
+describe('lookYaw', () => {
+  it('turns toward the kid beyond the turn range', () => expect(lookYaw(0, 0, 0, 30, 30)).toBeCloseTo(Math.PI / 4));
 });

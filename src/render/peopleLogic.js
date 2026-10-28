@@ -18,7 +18,12 @@ export const PEOPLE = { turnRange: 10, startleRange: 12, startleTime: 1.0, maxYa
 export function headYaw(px, pz, facing, kx, kz, maxYaw = PEOPLE.maxYaw) {
   const dx = kx - px, dz = kz - pz;
   if (dx * dx + dz * dz > PEOPLE.turnRange * PEOPLE.turnRange) return 0;
-  let a = Math.atan2(dx, dz) - facing;
+  return lookYaw(px, pz, facing, kx, kz, maxYaw);
+}
+
+/** headYaw at any distance (the startle snaps to the kid wherever it is). */
+export function lookYaw(px, pz, facing, kx, kz, maxYaw = PEOPLE.maxYaw) {
+  let a = Math.atan2(kx - px, kz - pz) - facing;
   a = Math.atan2(Math.sin(a), Math.cos(a)); // wrap to [-pi, pi]: the sign is the side the kid is on
   return Math.max(-maxYaw, Math.min(maxYaw, a));
 }

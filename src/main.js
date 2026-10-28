@@ -13,6 +13,7 @@ import { createWorld, startRun, stepWorld, triggerChase } from './sim/world.js';
 import { createRenderer } from './render/renderer.js';
 import { createEnvironment } from './render/environment.js';
 import { createActors } from './render/actors.js';
+import { createPeople } from './render/people.js';
 import { createCameraRig } from './render/cameraRig.js';
 import { createEffects } from './render/effects.js';
 import { slowMoTarget, createHitStop } from './render/timeScale.js';
@@ -28,6 +29,7 @@ const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('game')
 const view = createRenderer(canvas);
 const environment = createEnvironment(view.scene);
 const actors = createActors(view.scene);
+const people = createPeople(view.scene);
 const rig = createCameraRig(view.camera);
 const overlay = document.createElement('div');
 document.body.append(overlay);
@@ -59,6 +61,7 @@ function emit(events) {
     if (e === 'hit') hitStop.trigger();
     else if (e === 'caught' || e === 'run-start') hitStop.reset();
     actors.onEvent(e);
+    people.onEvent(e);
     rig.onEvent(e);
     effects.onEvent(e);
     hud.onEvent(e);
@@ -90,6 +93,7 @@ function render(alpha) {
   interp.x = lerp(prev.x, p.x);
   interp.y = lerp(prev.y, p.y);
   environment.update(interp.z);
+  people.sync(environment.peopleSpots(), { x: interp.x, z: -interp.z }, world.phase, renderDt);
   actors.sync(world, alpha, interp, renderDt);
   rig.update(world, renderDt, interp);
   effects.update(world, renderDt, interp);

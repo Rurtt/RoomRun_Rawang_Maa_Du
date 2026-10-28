@@ -459,7 +459,10 @@ function buildVariant(seed, kit) {
   const cross = [];
   for (let s = 0; s <= 16; s++) { const t = s / 16; cross.push(new THREE.Vector3(-(ROAD_HALF + 0.35) + t * 2 * (ROAD_HALF + 0.35), 7.4 - 1.0 * Math.sin(t * Math.PI), zc)); }
   b.line(cross);
-  // sidewalk clutter, kept off the lamp poles
+  // sidewalk clutter, kept off the lamp poles. People are spots for people.js (they move, so they
+  // don't merge) and roll their own rng so the street layout stays put.
+  const pr = createRng(seed + 7919);
+  const people = [];
   for (const side of [-1, 1]) {
     const x = side * (ROAD_HALF + WALK * 0.55);
     let z = 4 + r() * 4;
@@ -469,7 +472,14 @@ function buildVariant(seed, kit) {
       if (pick < 0.25) {
         if (kit?.food_cart) {
           b.kitPart(kit.food_cart, x, 0, -z, toRoad);
-          if (kit.stools && r() < 0.6) b.kitPart(kit.stools, x + side * 0.1, 0, -z - 1.9, r() * Math.PI);
+          // no room behind the cart: the vendor stands at the open end, turned to the cart and the road
+          people.push({ kind: 'vendor', x: x + side * 0.15, z: -z + 1.35, ry: Math.atan2(-side * 0.7, -1) });
+          if (kit.stools && r() < 0.6) {
+            const ry = r() * Math.PI;
+            b.kitPart(kit.stools, x + side * 0.1, 0, -z - 1.9, ry);
+            // sitters are modelled in stools space
+            if (pr() < 0.7) people.push({ kind: pr() < 0.5 ? 'sit_uncle' : 'sit_auntie', x: x + side * 0.1, z: -z - 1.9, ry });
+          } else if (pr() < 0.5) people.push({ kind: 'rider', x, z: -z - 1.4, ry: Math.atan2(-side * 0.7, 1) });
         } else foodCart(b, x, -z, toRoad, r);
       } else if (pick < 0.55) {
         if (kit?.scooter) b.kitPart(kit.scooter, x, 0, -z, r() < 0.5 ? 0 : Math.PI);
@@ -481,13 +491,13 @@ function buildVariant(seed, kit) {
       z += 5 + r() * 7;
     }
   }
-  return { ...b.merge(), lamps: b.lamps };
+  return { ...b.merge(), lamps: b.lamps, people };
 }
 
 // ---------------------------------------------------------------- environment
 /**
  * @param {THREE.Scene} scene
- * @returns {{ update(playerZ: number): void }}
+ * @returns {{ update(playerZ: number): void, peopleSpots(): Array<{ id: string, kind: string, x: number, z: number, ry: number }> }}
  */
 export function createEnvironment(scene) {
   const atlasCanvas = document.createElement('canvas');
@@ -557,7 +567,9 @@ export function createEnvironment(scene) {
     slot.start = start;
     slot.group.position.z = -start;
   }
+  let run = 0; // bumped by layout: a new run can put a different variant on the same slot and start
   function layout(playerZ) {
+    run++;
     const first = Math.floor(playerZ / SEG_LEN) * SEG_LEN - Math.ceil(BEHIND / SEG_LEN) * SEG_LEN;
     slots.forEach((slot, k) => { placeSlot(slot, first + k * SEG_LEN); setVariant(slot, variants[k % VARIANTS]); });
   }
@@ -574,7 +586,16 @@ export function createEnvironment(scene) {
 
   let lastZ = 0;
   const candidates = [];
+  const spots = [];
   return {
+    /** People spots of the live slots in world coordinates; an id changes when its slot is recycled. */
+    peopleSpots() {
+      spots.length = 0;
+      slots.forEach((slot, k) => slot.variant.people.forEach((p, i) => {
+        spots.push({ id: `${run}:${k}:${slot.start}:${i}`, kind: p.kind, x: p.x, z: -slot.start + p.z, ry: p.ry });
+      }));
+      return spots;
+    },
     update(playerZ) {
       if (playerZ < lastZ - SEG_LEN) layout(playerZ); // new run
       lastZ = playerZ;
