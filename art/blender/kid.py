@@ -33,8 +33,7 @@ def joint(name):
 skin = mat('skin', 0xf2b98e); shirt = mat('shirt', 0xf4f4f8); navy = mat('navy', 0x1f2f6a)
 hair = mat('hair', 0x1a1418); shoe = mat('shoe', 0x161616); sock = mat('sock', 0xf0f0f0)
 bag = mat('bag', 0xd8323a); bag_dark = mat('bag_dark', 0x9a1f28); yellow = mat('yellow', 0xffd23f)
-eye = mat('flat_eye', 0x24150f); shine = mat('flat_shine', 0xffffff); cheek = mat('flat_cheek', 0xff8f8f)
-mouth = mat('flat_mouth', 0x7a1e22); brow = mat('flat_brow', 0x1a1418)
+brow = mat('flat_brow', 0x1a1418)
 
 parts = []  # (bmesh, material, bone)
 
@@ -86,14 +85,7 @@ def cone(base, tip, r, m, bone, sides=6):
 # ---- head: big round head, spiky black hair, big eyes (the face reads from the front camera)
 HC = Vector((0, -0.005, 0.345))
 ball(HC, (0.165, 0.15, 0.15), skin, 'Head', 18, 12)
-for s in (-1, 1):
-    ball((s * 0.165, 0.0, 0.335), (0.035, 0.025, 0.045), skin, 'Head', 10, 8)  # ears
-    ball((s * 0.06, -0.14, 0.335), (0.03, 0.02, 0.04), eye, 'Head', 12, 8)
-    ball((s * 0.06 - 0.01, -0.157, 0.35), (0.011, 0.006, 0.012), shine, 'Head', 8, 6)
-    block((s * 0.065, -0.147, 0.39), (0.06, 0.02, 0.014), brow, 'Head', rot=('Y', s * -0.25))
-    ball((s * 0.105, -0.125, 0.3), (0.025, 0.012, 0.015), cheek, 'Head', 8, 6)
-ball((0, -0.155, 0.32), (0.012, 0.01, 0.01), skin, 'Head', 8, 6)  # nose
-ball((0, -0.142, 0.272), (0.04, 0.012, 0.018), mouth, 'Head', 12, 6)  # open grin
+face(ball, block, HC, skin, brow)
 
 # hair cap: a slightly bigger head shell cut off below a slanted line (fringe high at the front, low at the back)
 cap = ball(HC + Vector((0, 0.005, 0.012)), (0.172, 0.162, 0.158), hair, 'Head', 18, 12)

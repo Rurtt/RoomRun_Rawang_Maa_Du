@@ -146,13 +146,38 @@ def export(objs, filename):
     return path
 
 
-def stage(path, target=(0, 0, 1), az=-30, el=14, dist=8.0, lens=40, size=(1280, 720), kid=None):
-    """Workbench render of the scene as it stands (place objects first). kid=(x, y) adds a 1.35 m reference post."""
+def face(ball, block, hc, skin, brow, k=1.0, bone='Head'):
+    """The kid's face set around head centre hc (head radii 0.165, 0.15, 0.15 at k=1), scaled by k.
+    ball(c, r, m, bone, seg, rings) / block(c, s, m, bone, bevel, rot) are the caller's rigid-part builders.
+    Ears and nose in `skin`, brows in `brow`; eyes, shine, cheeks and mouth are sp_flat_* (no outline)."""
+    eye = mat('flat_eye', 0x24150f); shine = mat('flat_shine', 0xffffff); cheek = mat('flat_cheek', 0xff8f8f)
+    mouth = mat('flat_mouth', 0x7a1e22)
+    hc = Vector(hc)
+
+    def at(x, y, z):
+        return hc + Vector((x, y, z)) * k
+
+    def sz(*r):
+        return tuple(v * k for v in r)
+
+    for s in (-1, 1):
+        ball(at(s * 0.165, 0.005, -0.01), sz(0.035, 0.025, 0.045), skin, bone, 10, 8)  # ears
+        ball(at(s * 0.06, -0.135, -0.01), sz(0.03, 0.02, 0.04), eye, bone, 12, 8)
+        ball(at(s * 0.06 - 0.01, -0.152, 0.005), sz(0.011, 0.006, 0.012), shine, bone, 8, 6)
+        block(at(s * 0.065, -0.142, 0.045), sz(0.06, 0.02, 0.014), brow, bone, rot=('Y', s * -0.25))
+        ball(at(s * 0.105, -0.12, -0.045), sz(0.025, 0.012, 0.015), cheek, bone, 8, 6)
+    ball(at(0, -0.15, -0.025), sz(0.012, 0.01, 0.01), skin, bone, 8, 6)  # nose
+    ball(at(0, -0.137, -0.073), sz(0.04, 0.012, 0.018), mouth, bone, 12, 6)  # open grin
+
+
+def stage(path, target=(0, 0, 1), az=-30, el=14, dist=8.0, lens=40, size=(1280, 720), kid=None, color='MATERIAL'):
+    """Workbench render of the scene as it stands (place objects first). kid=(x, y) adds a 1.35 m reference post.
+    color: workbench colour source, 'VERTEX' for meshes coloured by attribute."""
     sc = bpy.context.scene
     sc.render.engine = 'BLENDER_WORKBENCH'
     sh = sc.display.shading
     sh.light = 'STUDIO'
-    sh.color_type = 'MATERIAL'
+    sh.color_type = color
     sh.show_object_outline = True
     sh.object_outline_color = (0, 0, 0)
     sc.render.resolution_x, sc.render.resolution_y = size
