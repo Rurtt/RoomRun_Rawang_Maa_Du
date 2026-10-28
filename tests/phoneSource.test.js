@@ -97,3 +97,14 @@ test('a sample with an absurd timestamp cannot wreck the clock', () => {
   swingWith(src, 1500, 1500, () => 0);
   expect(src.read(3030).speed).toBeGreaterThan(0.9);
 });
+
+test('tap on the left phone = lane left, right phone = lane right, once each', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  src.handleMessage({ t: 'tap', hand: 'L', ts: 1 }, 100);
+  expect(src.read(100).laneDelta).toBe(-1);
+  expect(src.read(116).laneDelta).toBe(0);
+  src.handleMessage({ t: 'tap', hand: 'R', ts: 2 }, 200);
+  expect(src.read(200).laneDelta).toBe(1);
+  src.handleMessage({ t: 'tap', hand: 'X', ts: 3 }, 300);
+  expect(src.read(300).laneDelta).toBe(0);
+});

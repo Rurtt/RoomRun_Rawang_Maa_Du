@@ -57,6 +57,17 @@ test('relay forwards phone motion to game and logs it', async () => {
   expect(typeof logged.rt).toBe('number'); // relay receive time, for clock alignment later
 });
 
+test('relay forwards and logs phone taps as the registered hand', async () => {
+  const game = await connect({ t: 'hello', role: 'game' });
+  await new Promise((r) => setTimeout(r, 30));
+  const phone = await connect({ t: 'hello', role: 'phone', hand: 'R' });
+  phone.send({ t: 'tap', hand: 'L', ts: 50 }); // claims the other hand: relay trusts the registration
+  await until(() => game.inbox.some((x) => x.t === 'tap'));
+  expect(game.inbox.find((x) => x.t === 'tap')).toEqual({ t: 'tap', hand: 'R', ts: 50 });
+  const [file] = readdirSync(join(dir, 'logs'));
+  await until(() => readFileSync(join(dir, 'logs', file), 'utf8').includes('"tap"'));
+});
+
 test('ping gets pong and game gets rtt', async () => {
   const game = await connect({ t: 'hello', role: 'game' });
   const phone = await connect({ t: 'hello', role: 'phone', hand: 'R' });

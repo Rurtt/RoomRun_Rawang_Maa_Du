@@ -114,7 +114,9 @@ export function createHud(root, cfg = config) {
       show(el.alt, !!url && world.phase === 'title');
       if (url && url !== qrUrl) {
         qrUrl = url;
-        QRCode.toCanvas(el.qrCanvas, url, { margin: 1, width: 320, color: { dark: '#000000', light: '#ffffff' } }).catch(() => {});
+        QRCode.toCanvas(el.qrCanvas, url, { margin: 1, width: 320, color: { dark: '#000000', light: '#ffffff' } })
+          .then(() => el.qrCanvas.removeAttribute('style')) // the lib sets an inline 320 px size; hud.css sizes it to the screen
+          .catch(() => {});
       }
     },
     onEvent(name) {

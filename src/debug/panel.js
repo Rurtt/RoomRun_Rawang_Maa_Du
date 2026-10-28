@@ -22,16 +22,17 @@ function restore(target, source) {
 
 /**
  * @param {any} config
- * @param {{ fps: number, rttMs: Record<'L'|'R', number|null> }} stats live object, read on update()
+ * @param {{ fps: number, rttMs: Record<'L'|'R', number|null>, upPeaks?: () => Record<'L'|'R', number> }} stats live object, read on update()
  */
 export function createDebugPanel(config, stats) {
   const gui = new GUI({ title: 'SoiP debug (`)' });
   gui.hide();
-  const view = { fps: '', phones: '', rttL: '', rttR: '' };
+  const view = { fps: '', phones: '', rttL: '', rttR: '', push: '' };
   const live = gui.addFolder('live');
   const readouts = [
     live.add(view, 'fps'), live.add(view, 'phones'),
     live.add(view, 'rttL').name('RTT L (ms)'), live.add(view, 'rttR').name('RTT R (ms)'),
+    live.add(view, 'push').name('jump push L / R'),
   ];
   for (const c of readouts) c.disable();
 
@@ -62,6 +63,8 @@ export function createDebugPanel(config, stats) {
       view.phones = `${['L', 'R'].filter((h) => stats.rttMs[h] != null).length} / 2`;
       view.rttL = rtt(stats.rttMs.L);
       view.rttR = rtt(stats.rttMs.R);
+      const up = stats.upPeaks?.();
+      view.push = up ? `${up.L.toFixed(0)} / ${up.R.toFixed(0)}` : '—';
       for (const c of readouts) c.updateDisplay();
     },
   };

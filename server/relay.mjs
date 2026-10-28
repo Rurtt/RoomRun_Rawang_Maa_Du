@@ -75,8 +75,9 @@ export async function createRelay({ port, staticDir, logDir }) {
       } else if (msg.t === 'hello' && msg.role === 'phone' && (msg.hand === 'L' || msg.hand === 'R')) {
         phones.set(ws, msg.hand);
         toGames(text);
-      } else if (msg.t === 'm' && phones.has(ws)) {
-        // only registered phones, and only as the hand they registered
+      } else if ((msg.t === 'm' || msg.t === 'tap') && phones.has(ws)) {
+        // only registered phones, and only as the hand they registered;
+        // taps are logged too, so they mark moments in a recording
         const sample = { ...msg, hand: phones.get(ws) };
         toGames(JSON.stringify(sample));
         if (!log) { mkdirSync(logDir, { recursive: true }); log = createWriteStream(logPath, { flags: 'a' }); }
