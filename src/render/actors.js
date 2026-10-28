@@ -35,6 +35,31 @@ function padTexture() {
 }
 
 /**
+ * Obstacle and coin meshes cloned from `templates[kind]` and reused. A mesh cloned from an
+ * older template (the stand-in, before the GLB loaded) is dropped on return, not pooled.
+ * @param {Record<string, THREE.Object3D>} templates
+ * @param {THREE.Object3D} root
+ */
+export function meshPool(templates, root) {
+  /** @type {Record<string, THREE.Object3D[]>} */
+  const pool = {};
+  const from = new WeakMap();
+  return {
+    take(kind) {
+      let obj = (pool[kind] ??= []).pop();
+      if (!obj) { obj = templates[kind].clone(); from.set(obj, templates[kind]); }
+      obj.visible = true;
+      root.add(obj);
+      return obj;
+    },
+    give(kind, obj) {
+      root.remove(obj);
+      if (from.get(obj) === templates[kind]) (pool[kind] ??= []).push(obj);
+    },
+  };
+}
+
+/**
  * @param {THREE.Scene} scene
  * @param {typeof config} cfg
  */
@@ -58,9 +83,18 @@ export function createActors(scene, cfg = config) {
   // the sleeping dog GLB is only 0.8 m long and 0.36 m high: too small to read from the follow camera
   const GROW = { dog: 1.5 }; // 1.6 out-sized the boss dog, 1.4 read too small without the outline
   const grown = (name, m) => { m.scale.multiplyScalar(GROW[name] ?? 1); return m; };
+  // the dog GLB lies along +Z (head forward); turn it across the lane like the stand-in, head to +X.
+  // Wrapped, because syncTrack sets the holder's rotation for the hit tip-over.
+  const across = (name, m) => {
+    if (name !== 'dog') return m;
+    const g = new THREE.Group();
+    m.rotation.y = Math.PI / 2;
+    g.add(m);
+    return g;
+  };
   for (const name of [...KINDS, 'coin']) {
     templates[name] = grown(name, makeStandIn(/** @type {any} */ (name)));
-    loadModel(name).then((m) => { if (!m.userData.standIn) templates[name] = grown(name, m); });
+    loadModel(name).then((m) => { if (!m.userData.standIn) templates[name] = grown(name, across(name, m)); });
   }
 
   // ---- kid
@@ -362,15 +396,7 @@ export function createActors(scene, cfg = config) {
   // ---- obstacles and coins, by sim id
   /** @type {Map<number, { obj: THREE.Object3D, pad?: THREE.Mesh, kind: string, hitT: number, side: number }>} */
   const live = new Map();
-  /** @type {Record<string, THREE.Object3D[]>} */
-  const pool = Object.fromEntries([...KINDS, 'coin'].map((k) => [k, []]));
-  const take = (kind) => {
-    const obj = pool[kind].pop() || templates[kind].clone();
-    obj.visible = true;
-    root.add(obj);
-    return obj;
-  };
-  const give = (kind, obj) => { root.remove(obj); pool[kind].push(obj); };
+  const { take, give } = meshPool(templates, root);
 
   // ---- animation state
   let phase = 0;
