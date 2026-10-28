@@ -118,8 +118,8 @@ export function createPeople(scene) {
         else if (f.startle !== Infinity) f.startle += dt;
         const w = startleWeight(f.startle);
 
-        f.yaw = ease(f.yaw, headYaw(v.x, v.z, facing, kid.x, kid.z), TURN_RATE, dt);
-        const yaw = w ? f.yaw + (lookYaw(v.x, v.z, facing, kid.x, kid.z) - f.yaw) * w : f.yaw;
+        f.yaw = ease(f.yaw, headYaw(v.x, v.z, facing, kid.x, kid.z, PEOPLE.maxYaw, f.yaw), TURN_RATE, dt);
+        const yaw = w ? f.yaw + (lookYaw(v.x, v.z, facing, kid.x, kid.z, PEOPLE.maxYaw, f.yaw) - f.yaw) * w : f.yaw;
         side.set(1, 0, 0).transformDirection(f.figure.matrixWorld); // the figure's left
         turnBone(f.spine, side, -LEAN * w); // + would tip the top forward
         turnBone(f.shoulders[0], front, SHRUG * w);

@@ -33,3 +33,13 @@ describe('ease', () => {
 describe('lookYaw', () => {
   it('turns toward the kid beyond the turn range', () => expect(lookYaw(0, 0, 0, 30, 30)).toBeCloseTo(Math.PI / 4));
 });
+
+describe('headYaw behind, carried over frames', () => {
+  it('holds the clamp side while the kid crosses straight behind', () => {
+    let yaw = 0;
+    for (let x = 3; x >= -3; x -= 0.1) { // kid sweeps from the left-behind to the right-behind
+      yaw = headYaw(0, 0, 0, x, -4, PEOPLE.maxYaw, yaw);
+      if (x < 0 && x > -1) expect(yaw).toBeCloseTo(PEOPLE.maxYaw);
+    }
+  });
+});

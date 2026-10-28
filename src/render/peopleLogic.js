@@ -12,20 +12,22 @@ export const PEOPLE = { turnRange: 10, startleRange: 12, startleTime: 1.0, maxYa
  * @param {number} kx kid x
  * @param {number} kz kid z
  * @param {number} [maxYaw]
- * @returns {number} 0 out of range; clamped to ±maxYaw. Behind the person it holds the clamp
- *   on the side the kid is on, so a kid running past never flips the head across.
+ * @param {number} [prevYaw] the head's current yaw: behind the person (beyond the clamp) the head
+ *   holds the clamp on this side, so a kid crossing straight behind never whips it across
+ * @returns {number} 0 out of range; clamped to ±maxYaw
  */
-export function headYaw(px, pz, facing, kx, kz, maxYaw = PEOPLE.maxYaw) {
+export function headYaw(px, pz, facing, kx, kz, maxYaw = PEOPLE.maxYaw, prevYaw = 0) {
   const dx = kx - px, dz = kz - pz;
   if (dx * dx + dz * dz > PEOPLE.turnRange * PEOPLE.turnRange) return 0;
-  return lookYaw(px, pz, facing, kx, kz, maxYaw);
+  return lookYaw(px, pz, facing, kx, kz, maxYaw, prevYaw);
 }
 
 /** headYaw at any distance (the startle snaps to the kid wherever it is). */
-export function lookYaw(px, pz, facing, kx, kz, maxYaw = PEOPLE.maxYaw) {
+export function lookYaw(px, pz, facing, kx, kz, maxYaw = PEOPLE.maxYaw, prevYaw = 0) {
   let a = Math.atan2(kx - px, kz - pz) - facing;
   a = Math.atan2(Math.sin(a), Math.cos(a)); // wrap to [-pi, pi]: the sign is the side the kid is on
-  return Math.max(-maxYaw, Math.min(maxYaw, a));
+  if (Math.abs(a) <= maxYaw) return a;
+  return (prevYaw ? Math.sign(prevYaw) : Math.sign(a)) * maxYaw;
 }
 
 const smooth = (t) => t * t * (3 - 2 * t);
