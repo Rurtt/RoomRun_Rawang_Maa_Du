@@ -26,6 +26,8 @@ export function createPhoneSource({ url, detector, cfg = config.phone }) {
   /** last motion sample per hand, game clock; hands never seen stay -Infinity */
   const lastSample = { L: -Infinity, R: -Infinity };
   let everConnected = false;
+  /** @type {-1|0|1} lane from a phone tap, waiting for the next read */
+  let tapLane = 0;
 
   /** @param {any} msg @param {number} recvMs game clock at arrival */
   function handleMessage(msg, recvMs = performance.now()) {
@@ -33,6 +35,9 @@ export function createPhoneSource({ url, detector, cfg = config.phone }) {
     const hand = msg.hand === 'L' || msg.hand === 'R' ? msg.hand : null;
     if (msg.t === 'rtt' && hand && typeof msg.ms === 'number') {
       rtt[hand] = msg.ms;
+    } else if (msg.t === 'tap' && hand) {
+      // tap anywhere on the left phone = lane left, right phone = lane right
+      tapLane = hand === 'L' ? -1 : 1;
     } else if (msg.t === 'hello' && hand) {
       // (re)connected phone page: its clock may have restarted
       offset[hand] = Infinity;
@@ -53,7 +58,7 @@ export function createPhoneSource({ url, detector, cfg = config.phone }) {
         for (let i = 0; i < 3; i++) g[i] += (msg.ag[i] - g[i]) * GRAVITY_SMOOTH;
         a = msg.ag.map((x, i) => x - g[i]);
       }
-      detector.push({ hand, ts: msg.ts + offset[hand], a });
+      detector.push({ hand, ts: msg.ts + offset[hand], a, ag: msg.ag });
     }
   }
 
@@ -80,6 +85,11 @@ export function createPhoneSource({ url, detector, cfg = config.phone }) {
       const seen = /** @type {const} */ (['L', 'R']).filter((h) => lastSample[h] > -Infinity);
       return seen.length > 0 && seen.every((h) => nowMs - lastSample[h] <= cfg.disconnectAfterMs);
     },
-    read(nowMs) { return detector.read(nowMs); },
+    read(nowMs) {
+      const frame = detector.read(nowMs);
+      if (tapLane && !frame.laneDelta) frame.laneDelta = tapLane;
+      tapLane = 0;
+      return frame;
+    },
   };
 }

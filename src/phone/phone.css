@@ -33,3 +33,6 @@ button:active { transform: translateY(1.5vw); box-shadow: 0 0.5vw 0 #000; }
 .state.bad { background: #d8203a; }
 .nums { display: flex; gap: 6vw; font-size: 5.5vw; opacity: 0.9; }
 .warn { color: #ffec4a; }
+.tap { font-weight: 800; font-size: 7vw; color: #5dff8a; }
+#phone.flash { animation: flash 0.25s ease-out; }
+@keyframes flash { from { background: rgb(93 255 138 / 0.45); } to { background: transparent; } }

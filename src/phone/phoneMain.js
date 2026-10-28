@@ -52,6 +52,7 @@ async function begin(h) {
     <div class="state wait">${S.connecting}</div>
     <div class="nums"><span class="rtt">${S.rtt('—')}</span><span class="rate">${S.rate(0)}</span></div>
     <p>${S.holdTip}</p>
+    <p class="tap">${S.tapTip(h)}</p>
     <p class="warn nosensor" hidden>${S.noSensor}</p>`;
   const stateEl = /** @type {HTMLElement} */ (root.querySelector('.state'));
   const rttEl = /** @type {HTMLElement} */ (root.querySelector('.rtt'));
@@ -86,6 +87,16 @@ async function begin(h) {
     });
   }
   connect();
+
+  // anywhere on the screen: thumb tap mid-run, no aiming
+  root.addEventListener('pointerdown', () => {
+    if (ws?.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ t: 'tap', hand: h, ts: performance.now() }));
+    navigator.vibrate?.(30);
+    root.classList.remove('flash');
+    void root.offsetWidth; // restart the flash animation
+    root.classList.add('flash');
+  });
 
   window.addEventListener('devicemotion', (e) => {
     samples++; totalSamples++;

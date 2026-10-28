@@ -47,7 +47,8 @@ const keyboard = createKeyboardSource({ cadence: createCadence() });
 keyboard.attach(window);
 hub.add(keyboard);
 // phones through the relay (`npm run phone`); quietly retries while it isn't running
-const phone = createPhoneSource({ url: wsUrl(location), detector: createMotionDetector() });
+const motion = createMotionDetector();
+const phone = createPhoneSource({ url: wsUrl(location), detector: motion });
 hub.add(phone);
 
 const world = createWorld(config);
@@ -108,7 +109,7 @@ function render(alpha) {
 let timeScale = 1;
 
 /** Live numbers for the debug panel. */
-const stats = { fps: 0, rttMs: phone.rtt };
+const stats = { fps: 0, rttMs: phone.rtt, upPeaks: motion.upPeaks };
 const panel = createDebugPanel(config, stats);
 
 window.addEventListener('keydown', (e) => {

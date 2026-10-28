@@ -23,7 +23,7 @@ for (const o of overrides) {
 const samples = readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((m) => m.t === 'm');
 if (!samples.length) { console.error('no motion samples in file'); process.exit(1); }
 const t0 = samples[0].rt;
-const src = createPhoneSource({ detector: createMotionDetector(motion, createCadence(config.cadence)) });
+const src = createPhoneSource({ detector: createMotionDetector(motion, createCadence(motion.cadence)) });
 
 const sec = (t) => ((t - t0) / 1000).toFixed(2).padStart(7);
 let bucket = 0, steps = 0, speedSum = 0, reads = 0;

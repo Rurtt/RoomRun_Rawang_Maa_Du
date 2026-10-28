@@ -21,10 +21,21 @@ export default {
   // Phone/stick arm-swing detection, m/s^2 with gravity removed. Tuned from logs (scripts/replay.mjs).
   motion: {
     axes: { vertical: 1, lateral: 0 },     // indexes into a = [x, y, z]
-    lateralSign: { L: 1, R: 1 },           // flip a hand whose phone is held the other way round
-    stepSign: 1,                           // count the swing end where vertical is this sign: one step per arm cycle per hand
+    lateralSign: { L: 1, R: -1 },          // phones held screens facing each other (mirrored grip)
+    stepSign: 1,                           // 1/-1: only peaks where vertical has this sign; 0: any |a| peak (tried 2026-10-28, fewer steps)
+    stepEvery: 2,                          // with stepSign 0: count every 2nd peak per hand (two peaks per arm cycle)
+    bounceSteps: true,                     // steps from the body bounce (tilt-free, natural arm swing OK); false: old arm-swing steps
+    bounceStepThreshold: 10, bounceStepRefractoryMs: 220, // 18:25 log: walking bounces 6-11, running 15-29 (6 let walking run at full speed)
+    // footsteps, not arm-swing peaks: 2026-10-28 logs ran in place at ~2.5-2.9 footsteps/s
+    cadence: { windowMs: 1500, stopAfterMs: 700, minRate: 0.6, fullRate: 2.5, smoothTau: 0.2 },
     stepThreshold: 6, stepRefractoryMs: 180,
-    jumpThreshold: 15, jumpWindowMs: 100,
+    jumpThreshold: 16, jumpWindowMs: 120,  // jump: both hands push up (along gravity) past this within this window
+                                           // (2026-10-28 log: real jumps 19-48, accidental ones 12-15; 14-18 all give the same jumps)
+    jumpOverBounce: 1.6, bounceDecay: 0.995, // per sample (~60 Hz): keeps ~90% across one step
+    bounceCap: 20,                          // running bounce is 15-18; one bigger push (a jump) counts as 20 at most // running bounces both hands ~15-18 per step: a jump must beat 1.6x the recent bounce
+    jumpCooldownMs: 700,                   // landing thump comes ~300-500 ms after takeoff: ignore it
+    freefallThreshold: 4, freefallMs: 120, // backup jump: both hands read |ag| under this (airborne) for this long
+    motionLanes: false,                    // lanes come from phone taps; arm-flick lanes wait for sensor fusion
     swipeThreshold: 12, swipeWindowMs: 150, gestureCooldownMs: 350,
     gestureHoldMs: 600, suppressStepsAfterGestureMs: 300,
   },
