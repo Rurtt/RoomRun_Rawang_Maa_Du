@@ -15,6 +15,8 @@ const AHEAD = 70, BEHIND = 20;
 /** Startle pose at full weight, rad: spine leans back, shoulders up. */
 const LEAN = 0.25, SHRUG = 0.15;
 const TURN_RATE = 6;
+/** Share of a head turn the upper body takes, so it isn't the head alone. */
+const BODY_SHARE = 0.35;
 
 const up = new THREE.Vector3(0, 1, 0);
 const v = new THREE.Vector3(), axis = new THREE.Vector3(), front = new THREE.Vector3(), side = new THREE.Vector3();
@@ -26,6 +28,20 @@ function turnBone(bone, worldAxis, angle) {
   bone.parent.getWorldQuaternion(q).invert();
   axis.copy(worldAxis).applyQuaternion(q);
   bone.quaternion.premultiply(qa.setFromAxisAngle(axis, angle));
+}
+
+/**
+ * Offsets on top of a clip (head turn, startle) have to come off before the mixer runs: it only
+ * writes a bone whose clip value changed, so on a constant track or in hit-stop (dt 0) an offset
+ * left on would pile up every frame. Per frame: undo(), mixer.update(), keep(), add the offsets.
+ * @param {THREE.Object3D[]} bones
+ */
+export function offsetLayer(bones) {
+  const base = bones.map((b) => b.quaternion.clone());
+  return {
+    undo() { bones.forEach((b, i) => b.quaternion.copy(base[i])); },
+    keep() { bones.forEach((b, i) => base[i].copy(b.quaternion)); },
+  };
 }
 
 /**
@@ -66,8 +82,10 @@ export function createPeople(scene) {
     const bones = {};
     figure.traverse((o) => { if (o.isBone) bones[o.name.replace(/^mixamorig|_\d+$/g, '')] = o; });
     const bone = (n) => bones[n];
-    return { kind, holder, figure, mixer, action, clip, head: bone('Head'), spine: bone('Spine'),
+    const f = { kind, holder, figure, mixer, action, clip, head: bone('Head'), spine: bone('Spine'), chest: bone('Spine2'),
       shoulders: [bone('LeftShoulder'), bone('RightShoulder')], yaw: 0, startle: Infinity };
+    f.layer = offsetLayer([f.spine, f.chest, ...f.shoulders, f.head].filter(Boolean));
+    return f;
   }
 
   function take(spot) {
@@ -108,7 +126,9 @@ export function createPeople(scene) {
 
       const caught = phase === 'caught';
       for (const f of live.values()) {
+        f.layer.undo();
         f.mixer.update(dt);
+        f.layer.keep();
         f.figure.updateMatrixWorld(true);
         f.head.getWorldPosition(v);
         f.figure.getWorldDirection(front);
@@ -124,7 +144,8 @@ export function createPeople(scene) {
         turnBone(f.spine, side, -LEAN * w); // + would tip the top forward
         turnBone(f.shoulders[0], front, SHRUG * w);
         turnBone(f.shoulders[1], front, -SHRUG * w);
-        turnBone(f.head, up, yaw);
+        turnBone(f.chest, up, yaw * BODY_SHARE);
+        turnBone(f.head, up, yaw * (1 - BODY_SHARE));
       }
     },
     onEvent(e) {
