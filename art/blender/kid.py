@@ -2,7 +2,8 @@
 
 Takes the skeleton and clips (idle/run/jump/caught) from public/models/kid.glb,
 drops the TRELLIS mesh and builds a new body from simple parts. Each part is
-weighted 100% to one bone (rigid, like a toy figure), so no re-rig is needed.
+weighted 100% to one bone (rigid, like a toy figure), so no re-rig is needed;
+knees and elbows get a ball so the tube ends hide inside it when they bend.
 Rest pose is the Mixamo T-pose: ground z -0.5, head top z 0.48, front -Y.
 Materials named sp_flat_* (face details) get no outline in the game.
 
@@ -89,8 +90,16 @@ face(ball, block, HC, skin, brow)
 
 # hair cap: a slightly bigger head shell cut off below a slanted line (fringe high at the front, low at the back)
 cap = ball(HC + Vector((0, 0.005, 0.012)), (0.172, 0.162, 0.158), hair, 'Head', 18, 12)
-cut = [v for v in cap.verts if (v.co.z - HC.z) < (0.05 if v.co.y < -0.08 else -0.02 + 0.5 * max(0.0, -v.co.y) - 0.6 * max(0.0, v.co.y - 0.02))]
-bmesh.ops.delete(cap, geom=cut, context='VERTS')
+hairline = lambda co: (co.z - HC.z) - (0.05 if co.y < -0.08 else -0.02 + 0.5 * max(0.0, -co.y) - 0.6 * max(0.0, co.y - 0.02))
+# cut exactly on the line: dropping whole sphere verts left a saw-tooth edge with skin showing in the steps
+cross = [e for e in cap.edges if (hairline(e.verts[0].co) < 0) != (hairline(e.verts[1].co) < 0)]
+edge_cut = []
+for e in cross:
+    a, b = e.verts
+    fa, fb = hairline(a.co), hairline(b.co)
+    edge_cut.append(bmesh.utils.edge_split(e, a, fa / (fa - fb))[1])
+bmesh.ops.connect_verts(cap, verts=edge_cut)
+bmesh.ops.delete(cap, geom=[v for v in cap.verts if hairline(v.co) < -1e-6], context='VERTS')
 bmesh.ops.solidify(cap, geom=cap.faces, thickness=0.012)
 # short Thai schoolboy cut: a soft mound on top plus a fringe swept to one side, no spikes
 top = ball(HC + Vector((0, 0.01, 0.06)), (0.17, 0.16, 0.12), hair, 'Head', 18, 10)
@@ -119,6 +128,9 @@ for side in ('Left', 'Right'):
     tube(sh - Vector((s * 0.02, 0, 0)), sh.lerp(el, 0.55), 0.048, 0.045, shirt, side + 'Arm', 10)  # short sleeve
     tube(sh, el, 0.03, 0.028, skin, side + 'Arm', 8)
     tube(el - (el - sh).normalized() * 0.012, wr, 0.028, 0.026, skin, side + 'ForeArm', 8)
+    # knee and elbow balls: both tubes turn about the ball's centre, so their ends stay inside it
+    # when the joint bends (rigid tube ends crossed and the outline traced the cut)
+    ball(el, (0.031, 0.031, 0.031), skin, side + 'ForeArm', 10, 8)
     hand = wr + (wr - el).normalized() * 0.04
     ball(hand, (0.042, 0.026, 0.036), skin, side + 'Hand', 10, 8)  # mitten hand
     ball(hand + Vector((-s * 0.015, -0.03, 0.0)), (0.014, 0.014, 0.014), skin, side + 'Hand', 8, 6)  # thumb
@@ -126,6 +138,7 @@ for side in ('Left', 'Right'):
     tube(hip + Vector((0, 0, 0.06)), hip.lerp(kn, 0.5), 0.062, 0.06, navy, side + 'UpLeg', 10)  # shorts leg
     tube(hip, kn, 0.04, 0.035, skin, side + 'UpLeg', 8)
     tube(kn + Vector((0, 0, 0.012)), kn.lerp(an, 0.5), 0.035, 0.032, skin, side + 'Leg', 8)
+    ball(kn, (0.039, 0.039, 0.039), skin, side + 'Leg', 10, 8)
     tube(kn.lerp(an, 0.45), an + Vector((0, 0, -0.01)), 0.038, 0.036, sock, side + 'Leg', 8)
     fwd = Vector((toe.x - an.x, toe.y - an.y, 0)).normalized()
     toe_c = Vector((an.x + fwd.x * 0.04, an.y + fwd.y * 0.04, -0.465))
@@ -153,6 +166,7 @@ bpy.context.view_layer.objects.active = objs[0]
 bpy.ops.object.join()
 body = bpy.context.view_layer.objects.active
 body.name = body.data.name = 'kid'
+
 body.parent = arm
 body.matrix_parent_inverse = arm.matrix_world.inverted()
 body.modifiers.new('Armature', 'ARMATURE').object = arm
