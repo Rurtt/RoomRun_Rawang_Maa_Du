@@ -113,10 +113,11 @@
 #hud .title-screen .prompt { font-size: calc(var(--u) * 4.2); color: #ffec4a; animation: breathe 1.4s ease-in-out infinite alternate; }
 @keyframes breathe { to { transform: scale(1.06); } }
 #hud .title-screen .alt { font-size: calc(var(--u) * 3); opacity: 0.95; }
-#hud .qr { margin-top: auto; margin-bottom: 6vh; display: flex; align-items: center; gap: calc(var(--u) * 2);
-  background: rgba(10, 4, 24, 0.75); border: calc(var(--u) * 0.5) solid #000; border-radius: calc(var(--u) * 2); padding: calc(var(--u) * 1.5); }
-#hud .qr canvas { width: calc(var(--u) * 16); height: calc(var(--u) * 16); border-radius: calc(var(--u) * 0.8); image-rendering: pixelated; }
-#hud .qr span { font-size: calc(var(--u) * 2.6); max-width: calc(var(--u) * 26); white-space: normal; }
+/* bottom-right corner, out of the title stack: the sign is tall and a 16:9 screen has no room below it */
+#hud .qr { position: absolute; right: calc(var(--u) * 3); bottom: calc(var(--u) * 3); display: flex; align-items: center; gap: calc(var(--u) * 2);
+  background: rgba(10, 4, 24, 0.75); border: calc(var(--u) * 0.5) solid #000; border-radius: calc(var(--u) * 1.6); padding: calc(var(--u) * 1.2); }
+#hud .qr canvas { width: calc(var(--u) * 12); height: calc(var(--u) * 12); border-radius: calc(var(--u) * 0.6); image-rendering: pixelated; }
+#hud .qr span { font-size: calc(var(--u) * 2); max-width: calc(var(--u) * 15); white-space: normal; }
 /* the caught screen waits for the cutscene (camera swing, grab, barking) to play first */
 #hud .caught-screen { background: radial-gradient(ellipse at center, rgba(40, 0, 20, 0.2), rgba(20, 0, 10, 0.7));
   animation: fadeIn 0.35s 1.8s both; }
