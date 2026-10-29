@@ -25,7 +25,7 @@ export default {
     stepSign: 1,                           // 1/-1: only peaks where vertical has this sign; 0: any |a| peak (tried 2026-10-28, fewer steps)
     stepEvery: 2,                          // with stepSign 0: count every 2nd peak per hand (two peaks per arm cycle)
     bounceSteps: true,                     // steps from the body bounce (tilt-free, natural arm swing OK); false: old arm-swing steps
-    bounceStepThreshold: 10, bounceStepRefractoryMs: 220, // 18:25 log: walking bounces 6-11, running 15-29 (6 let walking run at full speed)
+    bounceStepThreshold: 8, bounceStepRefractoryMs: 220, // 18:25 log: walking bounces 6-11, running 15-29 (6 let walking run at full speed); Oct 30 log: running bounces 6-14, 10 dropped half the footsteps
     // footsteps, not arm-swing peaks: 2026-10-28 logs ran in place at ~2.5-2.9 footsteps/s
     cadence: { windowMs: 1500, stopAfterMs: 700, minRate: 0.6, fullRate: 2.5, smoothTau: 0.2 },
     stepThreshold: 6, stepRefractoryMs: 180,
