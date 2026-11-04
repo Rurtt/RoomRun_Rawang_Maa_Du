@@ -12,3 +12,12 @@ export function gameFlow({ phase, action, sticksLost }) {
     paused: phase === 'running' && sticksLost,
   };
 }
+
+/**
+ * Danger/chase audio targets: quiet while paused for a dropped stick (the sim is frozen).
+ * @param {{ running: boolean, paused: boolean, fill: number, chaseActive: boolean }} s
+ */
+export function audioLevels({ running, paused, fill, chaseActive }) {
+  const on = running && !paused;
+  return { danger: on ? fill : 0, chase: on && chaseActive };
+}

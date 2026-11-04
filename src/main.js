@@ -9,7 +9,7 @@ import { createKeyboardSource } from './input/keyboard.js';
 import { createMotionDetector } from './input/motion.js';
 import { createPhoneSource } from './input/phoneSource.js';
 import { buzzForEvent } from './input/haptics.js';
-import { gameFlow } from './gameFlow.js';
+import { gameFlow, audioLevels } from './gameFlow.js';
 import { wsUrl } from './phone/protocol.js';
 import { createWorld, startRun, stepWorld, triggerChase } from './sim/world.js';
 import { createRenderer } from './render/renderer.js';
@@ -123,8 +123,9 @@ function render(alpha) {
   extra.phoneLost = phone.everConnected && !phone.connected(performance.now());
   hud.update(world, extra);
   const running = world.phase === 'running';
-  audio.setDanger(running ? meterFill(world.chaser.gap, config.chaser) : 0);
-  audio.setChase(running && world.chase.phase === 'active');
+  const levels = audioLevels({ running, paused: extra.reconnecting, fill: meterFill(world.chaser.gap, config.chaser), chaseActive: world.chase.phase === 'active' });
+  audio.setDanger(levels.danger);
+  audio.setChase(levels.chase);
   view.render();
 }
 
@@ -137,7 +138,7 @@ const panel = createDebugPanel(config, stats);
 window.addEventListener('keydown', (e) => {
   if (e.repeat || /** @type {any} */ (e.target)?.tagName === 'INPUT') return; // typing in the panel
   const action = hotkeyAction(e.code);
-  if (action === 'restart') restart();
+  if (action === 'restart') { phone.forgetSticks(); restart(); } // keyboard = operator: play on even with a dead stick
   else if (action === 'chase') triggerChase(world); // no-op unless a run is going
   else if (action === 'panel') panel.toggle();
   else if (action === 'hud') hudRoot.hidden = !hudRoot.hidden; // clean shots for the video

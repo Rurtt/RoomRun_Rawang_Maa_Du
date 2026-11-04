@@ -201,3 +201,20 @@ test('buzz without a socket is a no-op', () => {
   const src = createPhoneSource({ detector: createMotionDetector() });
   expect(() => src.buzz('hit')).not.toThrow();
 });
+
+test('a stick that only said hello (no motion, e.g. MPU6050 missing) never pauses the game', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  src.handleMessage({ t: 'hello', role: 'phone', hand: 'R', dev: 'stick' }, 0);
+  src.handleMessage({ t: 'bat', hand: 'R', dev: 'stick', v: 3.9, pct: 70 }, 10);
+  expect(src.sticksLost(5000)).toBe(false);
+});
+
+test('forgetSticks: keyboard restart after a dead stick is not stuck paused', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  src.handleMessage(sm('L', 0, 'stick'), 100);
+  expect(src.sticksLost(3000)).toBe(true);
+  src.forgetSticks();
+  expect(src.sticksLost(3000)).toBe(false);
+  src.handleMessage(sm('L', 3100, 'stick'), 3100); // stick comes back: tracked again
+  expect(src.sticksLost(5000)).toBe(true);
+});

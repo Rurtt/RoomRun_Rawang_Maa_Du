@@ -21,3 +21,10 @@ test('resumes after reconnect', () => {
   expect(gameFlow({ phase: 'running', action: null, sticksLost: true }).paused).toBe(true);
   expect(gameFlow({ phase: 'running', action: null, sticksLost: false }).paused).toBe(false);
 });
+
+test('audio goes quiet while paused for a dropped stick', async () => {
+  const { audioLevels } = await import('../src/gameFlow.js');
+  expect(audioLevels({ running: true, paused: false, fill: 0.8, chaseActive: true })).toEqual({ danger: 0.8, chase: true });
+  expect(audioLevels({ running: true, paused: true, fill: 0.8, chaseActive: true })).toEqual({ danger: 0, chase: false });
+  expect(audioLevels({ running: false, paused: false, fill: 0.8, chaseActive: true })).toEqual({ danger: 0, chase: false });
+});

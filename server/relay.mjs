@@ -20,10 +20,11 @@ function stamp(d = new Date()) {
 }
 
 /**
- * @param {{ port: number, staticDir: string, logDir: string }} opts port 0 = any free port
+ * @param {{ port: number, staticDir: string, logDir: string, heartbeatMs?: number }} opts port 0 = any free port;
+ *   heartbeatMs: ping every client this often, drop one that missed the last pong (a dead stick)
  * @returns {Promise<{ port: number, setTunnelUrl(url: string): void, close(): Promise<void> }>}
  */
-export async function createRelay({ port, staticDir, logDir }) {
+export async function createRelay({ port, staticDir, logDir, heartbeatMs = 3000 }) {
   const root = resolve(staticDir);
   const logPath = join(logDir, `motion-${stamp()}.jsonl`);
   /** @type {import('node:fs').WriteStream|null} made on the first sample, so idle starts leave no empty files */
@@ -65,7 +66,19 @@ export async function createRelay({ port, staticDir, logDir }) {
   const toGames = (text) => { for (const g of games) if (g.readyState === 1) g.send(text); };
   const helloOf = ({ hand, dev }) => JSON.stringify({ t: 'hello', role: 'phone', hand, dev });
 
+  /** @type {WeakSet<import('ws').WebSocket>} answered the last ping */
+  const alive = new WeakSet();
+  const heartbeat = setInterval(() => {
+    for (const c of wss.clients) {
+      if (!alive.has(c)) { c.terminate(); continue; } // close handler forgets it
+      alive.delete(c);
+      try { c.ping(); } catch { /* closing */ }
+    }
+  }, heartbeatMs);
+
   wss.on('connection', (ws) => {
+    alive.add(ws);
+    ws.on('pong', () => alive.add(ws));
     ws.on('message', (data) => {
       const text = String(data);
       let msg;
@@ -113,6 +126,7 @@ export async function createRelay({ port, staticDir, logDir }) {
     port: typeof addr === 'object' && addr ? addr.port : port,
     setTunnelUrl(url) { tunnelUrl = url; },
     async close() {
+      clearInterval(heartbeat);
       for (const c of wss.clients) c.terminate();
       await new Promise((res) => wss.close(() => res()));
       await new Promise((res) => server.close(() => res()));

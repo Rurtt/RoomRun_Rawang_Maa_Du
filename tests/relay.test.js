@@ -209,3 +209,25 @@ test('late game join hears the last battery report', async () => {
   await until(() => game.inbox.some((x) => x.t === 'bat'));
   expect(game.inbox.find((x) => x.t === 'bat')).toEqual({ t: 'bat', hand: 'L', v: 3.9, pct: 70, dev: 'stick' });
 });
+
+test('a device that stops answering pings is dropped (dead stick leaves no stale hello)', async () => {
+  await relay.close();
+  relay = await createRelay({ port: 0, staticDir: join(dir, 'dist'), logDir: join(dir, 'logs'), heartbeatMs: 50 });
+  const ws = new WebSocket(`ws://localhost:${relay.port}/ws`, { autoPong: false });
+  sockets.push(ws);
+  await new Promise((res) => ws.once('open', res));
+  ws.send(JSON.stringify({ t: 'hello', role: 'phone', hand: 'R', dev: 'stick' }));
+  const closed = new Promise((r) => ws.once('close', r));
+  await closed;
+  const game = await connect({ t: 'hello', role: 'game' });
+  await new Promise((r) => setTimeout(r, 50));
+  expect(game.inbox.some((x) => x.t === 'hello')).toBe(false);
+});
+
+test('a device that answers pings stays', async () => {
+  await relay.close();
+  relay = await createRelay({ port: 0, staticDir: join(dir, 'dist'), logDir: join(dir, 'logs'), heartbeatMs: 50 });
+  const stick = await connect({ t: 'hello', role: 'phone', hand: 'R', dev: 'stick' });
+  await new Promise((r) => setTimeout(r, 300));
+  expect(stick.ws.readyState).toBe(1);
+});

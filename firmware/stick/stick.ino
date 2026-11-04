@@ -41,7 +41,11 @@ void setup() {
 
 void loop() {
   uint32_t now = millis();
+  // a connect attempt can block linkLoop (TCP timeout, build_opt.h sets 1 s):
+  // never leave the motor running through a stall
+  digitalWrite(PIN_MOTOR, LOW);
   linkLoop(now);
+  now = millis();
   bool ready = linkReady();
 
   uint32_t us = micros();

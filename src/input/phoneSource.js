@@ -67,7 +67,6 @@ export function createPhoneSource({ url, detector, cfg = config.phone }) {
       offset[hand][dev] = Infinity;
       gravity[hand][dev] = null;
       late[hand][dev] = 0;
-      if (dev === 'stick') everStick[hand] = true;
     } else if (msg.t === 'm' && Number.isFinite(msg.ts)) {
       const off = offset[hand];
       const delay = recvMs - msg.ts;
@@ -131,6 +130,8 @@ export function createPhoneSource({ url, detector, cfg = config.phone }) {
     sticksLost(nowMs) {
       return HANDS.some((h) => everStick[h] && !live(h, 'stick', nowMs) && !live(h, 'phone', nowMs));
     },
+    /** Forget that sticks were ever here (keyboard restart: play on without a dead stick). */
+    forgetSticks() { everStick.L = false; everStick.R = false; },
     /** @returns {'start'|null} one-shot small-button action */
     takeAction() { const a = action; action = null; return a; },
     /** @param {'hit'|'caught'|'pack'|'jump'} pattern @param {'L'|'R'|'both'} hand */
