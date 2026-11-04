@@ -2,6 +2,7 @@
 // game would have seen, second by second. For tuning config.motion:
 //   node scripts/replay.mjs logs/motion-20261029-193000.jsonl
 //   node scripts/replay.mjs logs/<file> stepThreshold=7 swipeThreshold=14
+//   node scripts/replay.mjs logs/<file> stick.jumpThreshold=20
 import { readFileSync } from 'node:fs';
 import config from '../src/config.js';
 import { createCadence } from '../src/input/cadence.js';
@@ -16,8 +17,10 @@ if (!file) {
 const motion = structuredClone(config.motion);
 for (const o of overrides) {
   const [key, value] = o.split('=');
-  if (!(key in motion) || typeof motion[key] !== 'number') { console.error(`unknown numeric motion key: ${key}`); process.exit(1); }
-  motion[key] = Number(value);
+  // stick.<name>=value tunes motion.stick (thresholds for MPU6050 samples)
+  const [obj, k] = key.startsWith('stick.') ? [motion.stick, key.slice(6)] : [motion, key];
+  if (!(k in obj) || typeof obj[k] !== 'number') { console.error(`unknown numeric motion key: ${key}`); process.exit(1); }
+  obj[k] = Number(value);
 }
 
 const samples = readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((m) => m.t === 'm');

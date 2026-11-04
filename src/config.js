@@ -38,6 +38,8 @@ export default {
     motionLanes: false,                    // lanes come from phone taps; arm-flick lanes wait for sensor fusion
     swipeThreshold: 12, swipeWindowMs: 150, gestureCooldownMs: 350,
     gestureHoldMs: 600, suppressStepsAfterGestureMs: 300,
+    // MPU6050 sticks override these for their own samples; start = phone values, re-tune on stick logs
+    stick: { jumpThreshold: 16, bounceStepThreshold: 8, bounceCap: 20, freefallThreshold: 4 },
   },
   phone: { disconnectAfterMs: 1000 },
 };

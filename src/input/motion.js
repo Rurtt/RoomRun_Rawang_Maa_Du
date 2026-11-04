@@ -43,7 +43,7 @@ export function createMotionDetector(cfg = config.motion, cadence = createCadenc
   const crossed = (prev, now, threshold) => Math.abs(prev) < threshold && Math.abs(now) >= threshold;
   const pairs = (a, b, t, windowMs) => a && b && a.sign === b.sign && Math.abs(a.t - b.t) <= windowMs && t - a.t <= windowMs;
 
-  function gesture(t, cooldownMs = cfg.gestureCooldownMs) {
+  function gesture(t, cooldownMs = cfg.gestureCooldownMs) { // gesture timings are shared, not per device
     gestureFreeAt = t + cooldownMs;
     stepsFreeAt = t + cfg.suppressStepsAfterGestureMs;
     cadence.holdFor(cfg.gestureHoldMs, t);
@@ -53,13 +53,15 @@ export function createMotionDetector(cfg = config.motion, cadence = createCadenc
   return {
     /** @param {{ hand: 'L'|'R', ts: number, a: number[]|null, ag?: number[]|null }} sample */
     push(sample) {
+      // sticks (MPU6050) and phones read differently: per-sample thresholds by device kind
+      const c = sample.dev === 'stick' && cfg.stick ? { ...cfg, ...cfg.stick } : cfg;
       const h = hands[sample.hand];
       const a = sample.a;
       if (!h || !a || a.some((x) => typeof x !== 'number')) return;
       const t = sample.ts;
       const other = hands[sample.hand === 'L' ? 'R' : 'L'];
-      const v = a[cfg.axes.vertical];
-      const lat = a[cfg.axes.lateral] * (cfg.lateralSign[sample.hand] ?? 1);
+      const v = a[c.axes.vertical];
+      const lat = a[c.axes.lateral] * (c.lateralSign[sample.hand] ?? 1);
       const mag = Math.hypot(a[0], a[1], a[2]);
       const agv = sample.ag?.every((x) => typeof x === 'number') ? sample.ag : null;
       const ag = agv ? Math.hypot(...agv) : null;
@@ -69,37 +71,37 @@ export function createMotionDetector(cfg = config.motion, cadence = createCadenc
       const up = gn > 3 ? (a[0] * g[0] + a[1] * g[1] + a[2] * g[2]) / gn : 0;
       h.upPeak = Math.max(up, h.upPeak * 0.98); // debug readout: recent biggest push
       // each rise is judged against the bounce envelope from before it started, so a jump can't raise its own bar
-      if (h.up <= 0 && up > 0) h.jumpBar = Math.max(cfg.jumpThreshold, cfg.jumpOverBounce * h.bounce);
+      if (h.up <= 0 && up > 0) h.jumpBar = Math.max(c.jumpThreshold, c.jumpOverBounce * h.bounce);
 
-      if (ag != null) h.fallSince = ag < cfg.freefallThreshold ? (h.fallSince ?? t) : null;
+      if (ag != null) h.fallSince = ag < c.freefallThreshold ? (h.fallSince ?? t) : null;
       if (t < gestureFreeAt) {
-        h.bounce *= cfg.bounceDecay; // landing thumps (in the cooldown) stay out
+        h.bounce *= c.bounceDecay; // landing thumps (in the cooldown) stay out
       } else {
         // capped, so a jump's own push can't lift the bar for the next jump
-        h.bounce = Math.max(Math.min(up, cfg.bounceCap), h.bounce * cfg.bounceDecay);
-        if (cfg.motionLanes && crossed(h.lat, lat, cfg.swipeThreshold)) h.latSpike = { t, sign: Math.sign(lat) };
+        h.bounce = Math.max(Math.min(up, c.bounceCap), h.bounce * c.bounceDecay);
+        if (c.motionLanes && crossed(h.lat, lat, c.swipeThreshold)) h.latSpike = { t, sign: Math.sign(lat) };
         if (h.up < h.jumpBar && up >= h.jumpBar) h.upSpike = { t, sign: 1 };
-        if (pairs(h.upSpike, other.upSpike, t, cfg.jumpWindowMs)
-            || (h.fallSince != null && other.fallSince != null && t - Math.max(h.fallSince, other.fallSince) >= cfg.freefallMs)) {
+        if (pairs(h.upSpike, other.upSpike, t, c.jumpWindowMs)
+            || (h.fallSince != null && other.fallSince != null && t - Math.max(h.fallSince, other.fallSince) >= c.freefallMs)) {
           jump = true;
-          gesture(t, cfg.jumpCooldownMs);
-        } else if (cfg.motionLanes && pairs(h.latSpike, other.latSpike, t, cfg.swipeWindowMs)) {
+          gesture(t, c.jumpCooldownMs);
+        } else if (c.motionLanes && pairs(h.latSpike, other.latSpike, t, c.swipeWindowMs)) {
           laneDelta = /** @type {-1|1} */ (h.latSpike.sign);
           gesture(t);
         }
       }
 
-      if (cfg.bounceSteps) {
+      if (c.bounceSteps) {
         // both hands ride the same bounce: the first to rise counts the footstep, the other is inside the refractory
-        if (t >= stepsFreeAt && h.up < cfg.bounceStepThreshold && up >= cfg.bounceStepThreshold
-            && t - lastBounceStep >= cfg.bounceStepRefractoryMs) {
+        if (t >= stepsFreeAt && h.up < c.bounceStepThreshold && up >= c.bounceStepThreshold
+            && t - lastBounceStep >= c.bounceStepRefractoryMs) {
           lastBounceStep = t;
           cadence.addStep(t);
         }
-      } else if (t >= stepsFreeAt && crossed(h.mag, mag, cfg.stepThreshold) && t - h.lastStep >= cfg.stepRefractoryMs
-          && (cfg.stepSign === 0 || Math.sign(v) === cfg.stepSign)) {
+      } else if (t >= stepsFreeAt && crossed(h.mag, mag, c.stepThreshold) && t - h.lastStep >= c.stepRefractoryMs
+          && (c.stepSign === 0 || Math.sign(v) === c.stepSign)) {
         h.lastStep = t;
-        if (++h.peaks % (cfg.stepSign === 0 ? cfg.stepEvery : 1) === 0) cadence.addStep(t);
+        if (++h.peaks % (c.stepSign === 0 ? c.stepEvery : 1) === 0) cadence.addStep(t);
       }
       h.mag = mag; h.lat = lat; h.up = up;
     },

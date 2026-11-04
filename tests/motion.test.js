@@ -268,3 +268,20 @@ test('hold keeps speed when the swing already broke before the swipe (wind-up)',
   expect(frames.some((f) => f.laneDelta === -1)).toBe(true);
   expect(frames.at(-1).speed).toBeGreaterThan(before - 0.05);
 });
+
+test('stick thresholds apply to stick samples only', () => {
+  const cfg = { ...structuredClone(config.motion), stick: { ...config.motion.stick, jumpThreshold: 40 } };
+  const push25 = (det, dev) => {
+    let jumped = false;
+    for (let t = 0; t < 600; t += DT) {
+      for (const hand of ['L', 'R']) {
+        const v = t >= 50 && t < 110 ? 25 : 0;
+        det.push({ hand, dev, ts: t, a: [0, v, 0], ag: [0, v + 9.8, 0] });
+      }
+      if (det.read(t).jump) jumped = true;
+    }
+    return jumped;
+  };
+  expect(push25(createMotionDetector(cfg, createCadence(cfg.cadence)), 'phone')).toBe(true);
+  expect(push25(createMotionDetector(cfg, createCadence(cfg.cadence)), 'stick')).toBe(false);
+});
