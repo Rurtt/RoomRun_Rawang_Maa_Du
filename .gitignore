@@ -3,3 +3,5 @@ dist/
 logs/
 .superpowers/
 __pycache__/
+firmware/stick/secrets.h
+firmware/build/
