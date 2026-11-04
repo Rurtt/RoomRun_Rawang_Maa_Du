@@ -8,6 +8,8 @@ import { createInputHub } from './input/hub.js';
 import { createKeyboardSource } from './input/keyboard.js';
 import { createMotionDetector } from './input/motion.js';
 import { createPhoneSource } from './input/phoneSource.js';
+import { buzzForEvent } from './input/haptics.js';
+import { gameFlow } from './gameFlow.js';
 import { wsUrl } from './phone/protocol.js';
 import { createWorld, startRun, stepWorld, triggerChase } from './sim/world.js';
 import { createRenderer } from './render/renderer.js';
@@ -57,7 +59,13 @@ const world = createWorld(config);
 /** Player state before the latest step, for smooth rendering between steps. */
 const prev = { distance: 0, x: 0, y: 0 };
 const interp = { z: 0, x: 0, y: 0 };
-const extra = { phoneLost: false, tunnelUrl: /** @type {string|null} */ (null) };
+const extra = {
+  phoneLost: false, tunnelUrl: /** @type {string|null} */ (null),
+  /** @type {ReturnType<typeof phone.status>|null} */ sticks: null,
+  reconnecting: false,
+};
+
+function restart() { startRun(world); prev.distance = 0; emit(['run-start']); }
 
 function emit(events) {
   for (const e of events) {
@@ -70,13 +78,25 @@ function emit(events) {
     hud.onEvent(e);
     for (const sound of soundsForEvent(e)) audio.play(sound);
     if (e === 'chase-warning') audio.warn(config.chase.warningTime);
+    const b = buzzForEvent(e);
+    if (b) phone.buzz(b);
   }
 }
 
 function step(dt) {
   const p = world.player;
   prev.distance = p.distance; prev.x = p.x; prev.y = p.y;
-  const input = hub.read(performance.now());
+  const now = performance.now();
+  extra.sticks = phone.status(now);
+  const flow = gameFlow({ phase: world.phase, action: phone.takeAction(), sticksLost: phone.sticksLost(now) });
+  if (flow.start) restart();
+  if (flow.paused) {
+    extra.reconnecting = true;
+    hub.read(now); // drain: a jump/lane queued while the stick dropped must not fire on resume
+    return;
+  }
+  extra.reconnecting = false;
+  const input = hub.read(now);
   actors.onSteps(input.steps);
   rig.onSteps(input.steps);
   for (let i = 0; i < Math.min(input.steps, 2); i++) audio.play('step');
@@ -117,7 +137,7 @@ const panel = createDebugPanel(config, stats);
 window.addEventListener('keydown', (e) => {
   if (e.repeat || /** @type {any} */ (e.target)?.tagName === 'INPUT') return; // typing in the panel
   const action = hotkeyAction(e.code);
-  if (action === 'restart') { startRun(world); prev.distance = 0; emit(['run-start']); }
+  if (action === 'restart') restart();
   else if (action === 'chase') triggerChase(world); // no-op unless a run is going
   else if (action === 'panel') panel.toggle();
   else if (action === 'hud') hudRoot.hidden = !hudRoot.hidden; // clean shots for the video
