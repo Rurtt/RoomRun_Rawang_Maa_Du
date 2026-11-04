@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import './hud.css';
 import config from '../config.js';
 import strings from '../strings.js';
-import { formatMeters, meterFill, chaseSeconds } from './format.js';
+import { formatMeters, meterFill, chaseSeconds, stickLine } from './format.js';
 import { eyeColor } from '../render/chaserView.js';
 
 /** Boss dog face (CSS only): dark head, torn left ear, amber eyes (red when close), tan muzzle. */
@@ -29,16 +29,20 @@ export function createHud(root, cfg = config) {
       <div class="txt count hidden"></div>
     </div>
     <div class="txt phone-lost hidden"></div>
+    <div class="reconnect hidden"><div class="txt"></div></div>
     <div class="screen title-screen">
       <div class="gate-sign"><span class="name"></span></div>
       <div class="txt prompt"></div>
       <div class="txt alt hidden"></div>
+      <div class="sticks"><div class="txt stick l"></div><div class="txt stick r"></div></div>
+      <ul class="howto"></ul>
       <div class="qr hidden"><canvas></canvas><span class="txt"></span></div>
     </div>
     <div class="screen caught-screen hidden">
       <div class="txt big"></div>
       <div class="stats"><div class="txt d"></div><div class="txt c"></div></div>
       <div class="txt again"></div>
+      <div class="txt again-stick hidden"></div>
     </div>`;
   const $ = (sel) => /** @type {HTMLElement} */ (root.querySelector(sel));
   const el = {
@@ -47,6 +51,7 @@ export function createHud(root, cfg = config) {
     banner: $('.banner'), count: $('.count'), phoneLost: $('.phone-lost'),
     title: $('.title-screen'), alt: $('.title-screen .alt'), qr: $('.qr'), qrCanvas: /** @type {HTMLCanvasElement} */ ($('.qr canvas')),
     caught: $('.caught-screen'), caughtD: $('.caught-screen .d'), caughtC: $('.caught-screen .c'),
+    stickL: $('.sticks .l'), stickR: $('.sticks .r'), againStick: $('.again-stick'), reconnect: $('.reconnect'),
   };
   $('.title-screen .name').textContent = cfg.title;
   $('.title-screen .prompt').textContent = strings.startKeyboard;
@@ -55,6 +60,11 @@ export function createHud(root, cfg = config) {
   $('.caught-screen .big').textContent = strings.caught;
   $('.caught-screen .again').textContent = strings.restart;
   el.phoneLost.textContent = strings.phoneLost;
+  $('.reconnect .txt').textContent = strings.sticks.reconnecting;
+  el.againStick.textContent = strings.sticks.again;
+  const howto = $('.howto');
+  for (const line of strings.howTo) { const li = document.createElement('li'); li.className = 'txt'; li.textContent = line; howto.append(li); }
+  const NONE = { dev: null, connected: false, pct: null };
 
   // write to the DOM only when a value changes
   const last = new Map(); // `${slot}` or node -> last written value, per kind of write
@@ -72,13 +82,20 @@ export function createHud(root, cfg = config) {
   let lastCount = -1;
 
   return {
-    /** @param {any} world @param {{ phoneLost: boolean, tunnelUrl: string|null }} extra */
+    /** @param {any} world @param {{ phoneLost: boolean, tunnelUrl: string|null, sticks?: any, reconnecting?: boolean }} extra */
     update(world, extra) {
       const running = world.phase === 'running';
       show(el.title, world.phase === 'title');
       show(el.play, world.phase !== 'title');
       show(el.caught, world.phase === 'caught');
-      show(el.phoneLost, !!extra.phoneLost);
+      show(el.phoneLost, !!extra.phoneLost && !extra.reconnecting);
+      show(el.reconnect, running && !!extra.reconnecting);
+      const sticks = extra.sticks ?? { L: NONE, R: NONE };
+      text(el.stickL, stickLine('L', sticks.L));
+      text(el.stickR, stickLine('R', sticks.R));
+      cls(el.stickL, 'ok', !!sticks.L.connected);
+      cls(el.stickR, 'ok', !!sticks.R.connected);
+      show(el.againStick, sticks.L.dev === 'stick' || sticks.R.dev === 'stick');
 
       text(el.distance, formatMeters(world.player.distance));
       text(el.coinsN, String(world.coins));

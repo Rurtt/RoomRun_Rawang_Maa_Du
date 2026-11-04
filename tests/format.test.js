@@ -31,3 +31,12 @@ test('dog-theme strings', () => {
   expect(strings.caught).toBe('หมาทันแล้ว!');
   expect(strings.survived).toBe('รอดแล้ว!');
 });
+
+test('stickLine', async () => {
+  const { stickLine } = await import('../src/hud/format.js');
+  expect(stickLine('L', { dev: 'stick', connected: true, pct: 71 })).toBe('L พร้อม 71%');
+  expect(stickLine('R', { dev: 'stick', connected: true, pct: null })).toBe('R พร้อม');
+  expect(stickLine('L', { dev: 'phone', connected: true, pct: null })).toBe('L มือถือ');
+  expect(stickLine('L', { dev: null, connected: false, pct: null })).toBe('L รอไม้…');
+  expect(stickLine('R', { dev: 'stick', connected: false, pct: 40 })).toBe('R รอไม้…');
+});

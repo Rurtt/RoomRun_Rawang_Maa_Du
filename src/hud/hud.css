@@ -112,6 +112,15 @@
 @keyframes flicker { 0%, 92%, 100% { opacity: 1; } 93% { opacity: 0.6; } 95% { opacity: 1; } 96% { opacity: 0.7; } }
 #hud .title-screen .prompt { font-size: calc(var(--u) * 4.2); color: #ffec4a; animation: breathe 1.4s ease-in-out infinite alternate; }
 @keyframes breathe { to { transform: scale(1.06); } }
+/* stick connect panel + how-to, under the prompt; readable from ~2 m */
+#hud .title-screen .sticks { display: flex; gap: calc(var(--u) * 4); margin-top: calc(var(--u) * 2); font-size: calc(var(--u) * 3.6); }
+#hud .title-screen .stick { padding: calc(var(--u) * 0.6) calc(var(--u) * 2); border-radius: calc(var(--u) * 1); background: rgba(0, 0, 0, 0.45); opacity: 0.75; }
+#hud .title-screen .stick.ok { color: #7dffa0; opacity: 1; }
+#hud .title-screen .howto { list-style: none; margin: calc(var(--u) * 2) 0 0; padding: 0; font-size: calc(var(--u) * 2.8); text-align: center; line-height: 1.35; }
+#hud .caught-screen .again-stick { font-size: calc(var(--u) * 3); }
+/* a stick dropped mid-run: the game is paused until it is back */
+#hud .reconnect { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.6); }
+#hud .reconnect .txt { font-size: calc(var(--u) * 6); color: #ffec4a; animation: breathe 1.2s ease-in-out infinite alternate; }
 #hud .title-screen .alt { font-size: calc(var(--u) * 3); opacity: 0.95; }
 /* bottom-right corner, out of the title stack: the sign is tall and a 16:9 screen has no room below it */
 #hud .qr { position: absolute; right: calc(var(--u) * 3); bottom: calc(var(--u) * 3); display: flex; align-items: center; gap: calc(var(--u) * 2);

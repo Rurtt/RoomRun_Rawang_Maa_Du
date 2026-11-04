@@ -16,3 +16,14 @@ export function meterFill(gap, cfg = config.chaser) {
 export function chaseSeconds(secondsLeft) {
   return Math.ceil(Math.max(0, secondsLeft));
 }
+
+/**
+ * One hand's line on the title connect panel.
+ * @param {'L'|'R'} hand
+ * @param {{ dev: 'stick'|'phone'|null, connected: boolean, pct: number|null }} s
+ */
+export function stickLine(hand, s) {
+  if (!s?.connected || !s.dev) return `${hand} ${strings.sticks.waiting}`;
+  if (s.dev === 'phone') return `${hand} ${strings.sticks.phone}`;
+  return s.pct == null ? `${hand} ${strings.sticks.ready}` : `${hand} ${strings.sticks.ready} ${Math.round(s.pct)}%`;
+}

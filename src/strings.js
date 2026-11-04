@@ -11,6 +11,9 @@ export default {
   restart: 'กด R เพื่อเล่นอีกครั้ง',
   phoneLost: 'มือถือหลุด',
   scanToConnect: 'สแกนด้วยมือถือเพื่อใช้เป็นคอนโทรลเลอร์',
+  // stick controllers (onsite): connect panel, how-to, drop overlay
+  sticks: { waiting: 'รอไม้…', ready: 'พร้อม', phone: 'มือถือ', reconnecting: 'ไม้หลุด กำลังต่อใหม่…', again: 'ปุ่มเล็ก = เล่นอีกรอบ' },
+  howTo: ['วิ่งอยู่กับที่ = วิ่ง', 'ดันไม้ทั้งสองขึ้น = กระโดด', 'ปุ่มใหญ่ = เปลี่ยนเลน', 'ปุ่มเล็ก = เริ่ม'],
   // phone controller page
   phone: {
     pickHand: 'ถือมือถือไว้มือไหน?',
