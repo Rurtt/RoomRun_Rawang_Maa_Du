@@ -108,3 +108,96 @@ test('tap on the left phone = lane left, right phone = lane right, once each', (
   src.handleMessage({ t: 'tap', hand: 'X', ts: 3 }, 300);
   expect(src.read(300).laneDelta).toBe(0);
 });
+
+/** Detector stand-in that records pushed samples (the real one is tested in motion.test.js). */
+const recorder = () => {
+  const pushed = [];
+  return { pushed, push: (s) => pushed.push(s), read: () => ({ speed: 0, jump: false, laneDelta: 0, steps: 0 }) };
+};
+const sm = (hand, ts, dev) => ({ t: 'm', hand, dev, ts, a: null, ag: [0, 9.81, 0], r: [0, 0, 0] });
+
+test('big button = lane', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  src.handleMessage({ t: 'btn', hand: 'L', dev: 'stick', b: 'big', ts: 1 }, 100);
+  expect(src.read(100).laneDelta).toBe(-1);
+  src.handleMessage({ t: 'btn', hand: 'R', dev: 'stick', b: 'big', ts: 2 }, 200);
+  expect(src.read(200).laneDelta).toBe(1);
+  expect(src.read(216).laneDelta).toBe(0);
+});
+
+test('small button = start action once', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  expect(src.takeAction()).toBe(null);
+  src.handleMessage({ t: 'btn', hand: 'R', dev: 'stick', b: 'small', ts: 1 }, 100);
+  expect(src.read(100).laneDelta).toBe(0);
+  expect(src.takeAction()).toBe('start');
+  expect(src.takeAction()).toBe(null);
+});
+
+test('stick wins, phone takes over', () => {
+  const det = recorder();
+  const src = createPhoneSource({ detector: det });
+  for (let t = 0; t < 500; t += DT) {
+    src.handleMessage(sm('L', t, 'stick'), t + 20);
+    src.handleMessage(sm('L', t + 7e5, 'phone'), t + 20);
+  }
+  expect(det.pushed.length).toBeGreaterThan(20);
+  expect(det.pushed.every((s) => s.dev === 'stick')).toBe(true);
+  // stick goes quiet; phone keeps sending
+  const n = det.pushed.length;
+  for (let t = 500; t < 1600; t += DT) src.handleMessage(sm('L', t + 7e5, 'phone'), t + 20);
+  const after = det.pushed.slice(n);
+  expect(after.length).toBeGreaterThan(0);
+  expect(after.every((s) => s.dev === 'phone')).toBe(true);
+  // the first phone sample used is past disconnectAfterMs since the last stick sample
+  const lastStickRecv = Math.max(...[...Array(30).keys()].map((k) => k * DT).filter((t) => t < 500)) + 20;
+  expect(after[0].ts).toBeGreaterThan(lastStickRecv + 1000 - 1);
+});
+
+test('hello after drop resets offset', () => {
+  const det = recorder();
+  const src = createPhoneSource({ detector: det });
+  src.handleMessage({ t: 'hello', role: 'phone', hand: 'L', dev: 'stick' }, 4990);
+  src.handleMessage(sm('L', 1000, 'stick'), 5000);
+  src.handleMessage({ t: 'hello', role: 'phone', hand: 'L', dev: 'stick' }, 8990); // stick rebooted
+  src.handleMessage(sm('L', 10, 'stick'), 9000);
+  expect(det.pushed.at(-1).ts).toBeCloseTo(9000, 0);
+});
+
+test('status reports battery and device', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  src.handleMessage({ t: 'hello', role: 'phone', hand: 'L', dev: 'stick' }, 0);
+  src.handleMessage(sm('L', 5, 'stick'), 10);
+  src.handleMessage({ t: 'bat', hand: 'L', dev: 'stick', v: 3.92, pct: 71 }, 20);
+  expect(src.status(30).L).toEqual({ dev: 'stick', connected: true, pct: 71 });
+  expect(src.status(30).R).toEqual({ dev: null, connected: false, pct: null });
+});
+
+test('status shows a phone hand', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  src.handleMessage(m('R', 5, 0), 10); // phones send no dev; relay tags them 'phone' but old relays did not
+  expect(src.status(30).R).toEqual({ dev: 'phone', connected: true, pct: null });
+});
+
+test('sticksLost', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  expect(src.sticksLost(0)).toBe(false);
+  src.handleMessage(sm('L', 0, 'stick'), 100);
+  expect(src.sticksLost(500)).toBe(false);
+  expect(src.sticksLost(1101)).toBe(true);
+  src.handleMessage(sm('L', 1200, 'stick'), 1300);
+  expect(src.sticksLost(1310)).toBe(false);
+});
+
+test('sticksLost is false while a backup phone feeds the hand', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  src.handleMessage(sm('L', 0, 'stick'), 100);
+  for (let t = 100; t < 1500; t += DT) src.handleMessage(sm('L', t, 'phone'), t);
+  expect(src.sticksLost(1500)).toBe(false);
+  expect(src.status(1500).L.dev).toBe('phone');
+});
+
+test('buzz without a socket is a no-op', () => {
+  const src = createPhoneSource({ detector: createMotionDetector() });
+  expect(() => src.buzz('hit')).not.toThrow();
+});
