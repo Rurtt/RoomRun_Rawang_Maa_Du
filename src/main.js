@@ -18,6 +18,7 @@ import { createCameraRig } from './render/cameraRig.js';
 import { createEffects } from './render/effects.js';
 import { slowMoTarget, createHitStop } from './render/timeScale.js';
 import { createHud } from './hud/hud.js';
+import { createVolumeSlider } from './hud/volume.js';
 import { meterFill } from './hud/format.js';
 import { createAudio, soundsForEvent } from './audio/audio.js';
 import { hotkeyAction } from './debug/hotkeys.js';
@@ -38,6 +39,7 @@ const hudRoot = document.createElement('div');
 document.body.append(hudRoot);
 const hud = createHud(hudRoot);
 const audio = createAudio();
+createVolumeSlider(hudRoot, (v) => audio.setVolume(v));
 const hitStop = createHitStop(config);
 // browsers only allow sound after a user gesture
 for (const type of ['keydown', 'pointerdown']) window.addEventListener(type, () => audio.unlock(), { once: true });
@@ -118,6 +120,7 @@ window.addEventListener('keydown', (e) => {
   if (action === 'restart') { startRun(world); prev.distance = 0; emit(['run-start']); }
   else if (action === 'chase') triggerChase(world); // no-op unless a run is going
   else if (action === 'panel') panel.toggle();
+  else if (action === 'hud') hudRoot.hidden = !hudRoot.hidden; // clean shots for the video
 });
 
 // Tunnel URL for the title-screen QR. Only exists while `npm run phone` runs;

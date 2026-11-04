@@ -127,3 +127,10 @@
 #hud .caught-screen .stats { display: flex; gap: calc(var(--u) * 6); font-size: calc(var(--u) * 6); }
 #hud .caught-screen .stats .c { color: #ffd84d; }
 #hud .caught-screen .again { font-size: calc(var(--u) * 3.6); color: #ffec4a; animation: breathe 1.2s ease-in-out infinite alternate; }
+
+/* volume slider, bottom-left (QR sits bottom-right) */
+#hud .volume { position: absolute; left: calc(var(--u) * 3); bottom: calc(var(--u) * 3); display: flex; align-items: center;
+  gap: calc(var(--u) * 1.2); pointer-events: auto; opacity: 0.55; transition: opacity 0.2s; }
+#hud .volume:hover, #hud .volume:focus-within { opacity: 1; }
+#hud .volume span { font-size: calc(var(--u) * 2.4); }
+#hud .volume input { width: calc(var(--u) * 16); accent-color: #ffd84d; cursor: pointer; }

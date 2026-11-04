@@ -41,3 +41,10 @@ Tuk-tuk horn and vendor yell (no files yet: drop `horn.ogg` / `yell.ogg` in `pub
 
 ## Font
 Kanit (SIL Open Font License 1.1) via @fontsource/kanit.
+
+## Horn — supplied by Pong (2026-10-28)
+Converted from mp3 to ogg (silence trimmed, loudness normalised). Source and licence of the horn clip not checked yet.
+
+| File in `public/audio/` | Original file |
+|---|---|
+| horn.ogg | Motorcycle Horn Sound Effect.mp3 |

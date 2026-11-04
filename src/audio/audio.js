@@ -63,6 +63,9 @@ export function createAudio(cfg = config) {
   let musicGain = null, chaseGain = null;
   let chaseOn = false;
   let unlocking = null;
+  /** @type {GainNode|null} everything (sfx + music) goes through this, for the volume slider */
+  let master = null;
+  let volume = 1;
 
   async function decode(file) {
     const bytes = await raw[file];
@@ -98,7 +101,7 @@ export function createAudio(cfg = config) {
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.loop = true;
-      src.connect(g).connect(ctx.destination);
+      src.connect(g).connect(master);
       src.start(at);
     }
     if (!b) chaseGain = null;
@@ -111,8 +114,11 @@ export function createAudio(cfg = config) {
       unlocking = (async () => {
         ctx = new AudioContext();
         await ctx.resume();
+        master = ctx.createGain();
+        master.gain.value = volume ** 2; // squared: the slider feels even, not all-loud-until-the-end
+        master.connect(ctx.destination);
         sfx = ctx.createGain();
-        sfx.connect(ctx.destination);
+        sfx.connect(master);
         growlLoop = (await fileLoop('growl', GROWL_MAX)) ?? createGrowlLoop(ctx, sfx);
         packLoop = (await fileLoop('pack', PACK_MAX)) ?? createPackLoop(ctx, sfx);
         packLoop.setLevel(chaseOn ? 1 : 0);
@@ -154,6 +160,12 @@ export function createAudio(cfg = config) {
         music: !!musicGain,
         chaseMusic: !!chaseGain,
       };
+    },
+
+    /** @param {number} v 0..1 master volume, safe before unlock */
+    setVolume(v) {
+      volume = Math.max(0, Math.min(1, v));
+      if (master) master.gain.setTargetAtTime(volume ** 2, ctx.currentTime, 0.03);
     },
 
     /** @param {number} level danger meter fill 0..1 */
