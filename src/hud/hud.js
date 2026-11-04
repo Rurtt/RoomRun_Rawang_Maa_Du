@@ -49,7 +49,7 @@ export function createHud(root, cfg = config) {
     play: $('.play'), distance: $('.distance'), coins: $('.coins'), coinsN: $('.coins span'),
     meter: $('.meter'), fill: $('.meter .fill'), face: $('.meter .face'), faceIcon: $('.meter .dog-face'), gap: $('.gap'), heel: $('.heel-icons'),
     banner: $('.banner'), count: $('.count'), phoneLost: $('.phone-lost'),
-    title: $('.title-screen'), alt: $('.title-screen .alt'), qr: $('.qr'), qrCanvas: /** @type {HTMLCanvasElement} */ ($('.qr canvas')),
+    title: $('.title-screen'), prompt: $('.title-screen .prompt'), alt: $('.title-screen .alt'), qr: $('.qr'), qrCanvas: /** @type {HTMLCanvasElement} */ ($('.qr canvas')),
     caught: $('.caught-screen'), caughtD: $('.caught-screen .d'), caughtC: $('.caught-screen .c'),
     stickL: $('.sticks .l'), stickR: $('.sticks .r'), againStick: $('.again-stick'), reconnect: $('.reconnect'),
   };
@@ -95,7 +95,10 @@ export function createHud(root, cfg = config) {
       text(el.stickR, stickLine('R', sticks.R));
       cls(el.stickL, 'ok', !!sticks.L.connected);
       cls(el.stickR, 'ok', !!sticks.R.connected);
-      show(el.againStick, sticks.L.dev === 'stick' || sticks.R.dev === 'stick');
+      const anyStick = sticks.L.dev === 'stick' || sticks.R.dev === 'stick';
+      show(el.againStick, anyStick);
+      // onsite: once a stick is in, the keyboard/phone prompts are noise; the how-to says it all
+      show(el.prompt, !anyStick);
 
       text(el.distance, formatMeters(world.player.distance));
       text(el.coinsN, String(world.coins));
@@ -127,8 +130,10 @@ export function createHud(root, cfg = config) {
 
       // QR for the phone page, title screen only
       const url = extra.tunnelUrl ? `${extra.tunnelUrl}/phone.html` : null;
-      show(el.qr, !!url && world.phase === 'title');
-      show(el.alt, !!url && world.phase === 'title');
+      // both sticks in: hide the phone QR (it comes back if one drops, for a backup phone)
+      const bothSticks = sticks.L.dev === 'stick' && sticks.L.connected && sticks.R.dev === 'stick' && sticks.R.connected;
+      show(el.qr, !!url && world.phase === 'title' && !bothSticks);
+      show(el.alt, !!url && world.phase === 'title' && !anyStick);
       if (url && url !== qrUrl) {
         qrUrl = url;
         QRCode.toCanvas(el.qrCanvas, url, { margin: 1, width: 320, color: { dark: '#000000', light: '#ffffff' } })

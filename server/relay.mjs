@@ -60,7 +60,7 @@ export async function createRelay({ port, staticDir, logDir }) {
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
   /** @type {Set<import('ws').WebSocket>} */
   const games = new Set();
-  /** @type {Map<import('ws').WebSocket, { hand: 'L'|'R', dev: 'stick'|'phone' }>} */
+  /** @type {Map<import('ws').WebSocket, { hand: 'L'|'R', dev: 'stick'|'phone', bat?: string }>} last bat kept for late games */
   const phones = new Map();
   const toGames = (text) => { for (const g of games) if (g.readyState === 1) g.send(text); };
   const helloOf = ({ hand, dev }) => JSON.stringify({ t: 'hello', role: 'phone', hand, dev });
@@ -74,7 +74,7 @@ export async function createRelay({ port, staticDir, logDir }) {
       if (msg.t === 'hello' && msg.role === 'game') {
         games.add(ws);
         // tell a late-joining game which phones/sticks are already here
-        for (const p of phones.values()) ws.send(helloOf(p));
+        for (const p of phones.values()) { ws.send(helloOf(p)); if (p.bat) ws.send(p.bat); }
       } else if (msg.t === 'hello' && msg.role === 'phone' && (msg.hand === 'L' || msg.hand === 'R')) {
         const p = { hand: msg.hand, dev: msg.dev === 'stick' ? 'stick' : 'phone' };
         phones.set(ws, p);
@@ -82,9 +82,11 @@ export async function createRelay({ port, staticDir, logDir }) {
       } else if ((msg.t === 'm' || msg.t === 'tap' || msg.t === 'btn' || msg.t === 'bat') && phones.has(ws)) {
         // only registered devices, and only as the hand they registered;
         // taps/buttons are logged too, so they mark moments in a recording
-        const { hand, dev } = phones.get(ws);
-        const sample = { ...msg, hand, dev };
-        toGames(JSON.stringify(sample));
+        const p = phones.get(ws);
+        const sample = { ...msg, hand: p.hand, dev: p.dev };
+        const out = JSON.stringify(sample);
+        if (msg.t === 'bat') p.bat = out; // battery comes every ~10 s: a reloaded game page should not wait for it
+        toGames(out);
         if (!log) { mkdirSync(logDir, { recursive: true }); log = createWriteStream(logPath, { flags: 'a' }); }
         log.write(JSON.stringify({ ...sample, rt: Date.now() }) + '\n');
       } else if (msg.t === 'buzz' && games.has(ws) && BUZZ.has(msg.pattern)

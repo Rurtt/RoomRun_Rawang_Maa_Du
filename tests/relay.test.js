@@ -200,3 +200,12 @@ test('late game join hears dev', async () => {
   expect(game.inbox).toContainEqual({ t: 'hello', role: 'phone', hand: 'L', dev: 'stick' });
   expect(game.inbox).toContainEqual({ t: 'hello', role: 'phone', hand: 'R', dev: 'phone' });
 });
+
+test('late game join hears the last battery report', async () => {
+  const stick = await connect({ t: 'hello', role: 'phone', hand: 'L', dev: 'stick' });
+  stick.send({ t: 'bat', hand: 'L', v: 3.9, pct: 70 });
+  await new Promise((r) => setTimeout(r, 50));
+  const game = await connect({ t: 'hello', role: 'game' });
+  await until(() => game.inbox.some((x) => x.t === 'bat'));
+  expect(game.inbox.find((x) => x.t === 'bat')).toEqual({ t: 'bat', hand: 'L', v: 3.9, pct: 70, dev: 'stick' });
+});
