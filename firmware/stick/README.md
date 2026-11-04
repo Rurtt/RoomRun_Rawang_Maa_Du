@@ -11,7 +11,7 @@ Plain logic (debounce, buzz patterns, LED, battery %, message format) lives in
 
 1. `cp firmware/stick/secrets.example.h firmware/stick/secrets.h`, fill in both WiFi networks.
    `secrets.h` is gitignored: never commit it.
-2. Library: `"$ARDUINO_CLI" lib install WebSockets` (links2004; version in the Bring-up log).
+2. Library: `"$ARDUINO_CLI" lib install WebSockets` (links2004, tested with 2.7.2). Other libs: none (MPU6050 read by raw registers).
 3. Board core: esp32 by Espressif 3.3.x, board `XIAO_ESP32C3`.
 
 Tool paths used below (Git Bash):
@@ -31,13 +31,13 @@ Prints `OK`.
 
 ## Compile / flash
 
-Hand is a build flag (default `L`). Fake motion (no MPU6050 needed) is another flag.
+Hand is a build flag (default `L`, `-DHAND_R=1` = right). Fake motion (no MPU6050 needed) is `-DFAKE_MOTION=1`; combine both in one `extra_flags` string. Flash use ~90%.
 
 ```
 # left stick, real sensor
 "$ARDUINO_CLI" compile --fqbn $FQBN --build-path firmware/build/L firmware/stick
 # right stick
-"$ARDUINO_CLI" compile --fqbn $FQBN --build-path firmware/build/R --build-property "compiler.cpp.extra_flags=-DHAND='R'" firmware/stick
+"$ARDUINO_CLI" compile --fqbn $FQBN --build-path firmware/build/R --build-property "compiler.cpp.extra_flags=-DHAND_R=1" firmware/stick
 # bare XIAO, fake motion
 "$ARDUINO_CLI" compile --fqbn $FQBN --build-path firmware/build/fake --build-property "compiler.cpp.extra_flags=-DFAKE_MOTION=1" firmware/stick
 
