@@ -44,8 +44,8 @@ test('relay forwards phone motion to game and logs it', async () => {
   const m = { t: 'm', hand: 'L', ts: 123.5, a: [1, 2, 3], ag: [1, 11.8, 3], r: [10, 20, 30] };
   phone.send(m);
   await until(() => game.inbox.some((x) => x.t === 'm'));
-  expect(game.inbox).toContainEqual({ t: 'hello', role: 'phone', hand: 'L' });
-  expect(game.inbox.find((x) => x.t === 'm')).toEqual(m);
+  expect(game.inbox).toContainEqual({ t: 'hello', role: 'phone', hand: 'L', dev: 'phone' });
+  expect(game.inbox.find((x) => x.t === 'm')).toEqual({ ...m, dev: 'phone' });
   const files = readdirSync(join(dir, 'logs'));
   expect(files).toHaveLength(1);
   expect(files[0]).toMatch(/^motion-\d{8}-\d{6}\.jsonl$/);
@@ -63,7 +63,7 @@ test('relay forwards and logs phone taps as the registered hand', async () => {
   const phone = await connect({ t: 'hello', role: 'phone', hand: 'R' });
   phone.send({ t: 'tap', hand: 'L', ts: 50 }); // claims the other hand: relay trusts the registration
   await until(() => game.inbox.some((x) => x.t === 'tap'));
-  expect(game.inbox.find((x) => x.t === 'tap')).toEqual({ t: 'tap', hand: 'R', ts: 50 });
+  expect(game.inbox.find((x) => x.t === 'tap')).toEqual({ t: 'tap', hand: 'R', ts: 50, dev: 'phone' });
   const [file] = readdirSync(join(dir, 'logs'));
   await until(() => readFileSync(join(dir, 'logs', file), 'utf8').includes('"tap"'));
 });
@@ -124,4 +124,79 @@ test('oversized messages are refused', async () => {
   const closed = new Promise((r) => phone.ws.once('close', r));
   phone.ws.send('x'.repeat(100_000));
   await closed;
+});
+
+test('stick hello is tagged dev stick', async () => {
+  const game = await connect({ t: 'hello', role: 'game' });
+  await new Promise((r) => setTimeout(r, 30));
+  await connect({ t: 'hello', role: 'phone', hand: 'L', dev: 'stick', fw: '0.1' });
+  await until(() => game.inbox.some((x) => x.t === 'hello'));
+  expect(game.inbox.find((x) => x.t === 'hello')).toMatchObject({ t: 'hello', role: 'phone', hand: 'L', dev: 'stick' });
+});
+
+test('btn and bat are forwarded with hand and dev', async () => {
+  const game = await connect({ t: 'hello', role: 'game' });
+  await new Promise((r) => setTimeout(r, 30));
+  const stick = await connect({ t: 'hello', role: 'phone', hand: 'R', dev: 'stick' });
+  stick.send({ t: 'btn', hand: 'L', b: 'big', ts: 5 });
+  stick.send({ t: 'bat', hand: 'L', v: 3.92, pct: 71 });
+  await until(() => game.inbox.some((x) => x.t === 'bat'));
+  expect(game.inbox.find((x) => x.t === 'btn')).toEqual({ t: 'btn', hand: 'R', b: 'big', ts: 5, dev: 'stick' });
+  expect(game.inbox.find((x) => x.t === 'bat')).toEqual({ t: 'bat', hand: 'R', v: 3.92, pct: 71, dev: 'stick' });
+});
+
+test('buzz both reaches sticks only', async () => {
+  const game = await connect({ t: 'hello', role: 'game' });
+  const stickL = await connect({ t: 'hello', role: 'phone', hand: 'L', dev: 'stick' });
+  const stickR = await connect({ t: 'hello', role: 'phone', hand: 'R', dev: 'stick' });
+  const phone = await connect({ t: 'hello', role: 'phone', hand: 'L' });
+  await new Promise((r) => setTimeout(r, 30));
+  game.send({ t: 'buzz', hand: 'both', pattern: 'hit' });
+  await until(() => stickL.inbox.some((x) => x.t === 'buzz') && stickR.inbox.some((x) => x.t === 'buzz'));
+  expect(stickL.inbox.find((x) => x.t === 'buzz')).toEqual({ t: 'buzz', pattern: 'hit' });
+  await new Promise((r) => setTimeout(r, 50));
+  expect(phone.inbox.some((x) => x.t === 'buzz')).toBe(false);
+});
+
+test('buzz L reaches only the L stick', async () => {
+  const game = await connect({ t: 'hello', role: 'game' });
+  const stickL = await connect({ t: 'hello', role: 'phone', hand: 'L', dev: 'stick' });
+  const stickR = await connect({ t: 'hello', role: 'phone', hand: 'R', dev: 'stick' });
+  await new Promise((r) => setTimeout(r, 30));
+  game.send({ t: 'buzz', hand: 'L', pattern: 'jump' });
+  await until(() => stickL.inbox.some((x) => x.t === 'buzz'));
+  await new Promise((r) => setTimeout(r, 50));
+  expect(stickR.inbox.some((x) => x.t === 'buzz')).toBe(false);
+});
+
+test('buzz only from games', async () => {
+  const stickL = await connect({ t: 'hello', role: 'phone', hand: 'L', dev: 'stick' });
+  const phone = await connect({ t: 'hello', role: 'phone', hand: 'R' });
+  const stranger = await connect({ t: 'nothing' });
+  await new Promise((r) => setTimeout(r, 30));
+  phone.send({ t: 'buzz', hand: 'both', pattern: 'hit' });
+  stranger.send({ t: 'buzz', hand: 'both', pattern: 'hit' });
+  stickL.send({ t: 'buzz', hand: 'both', pattern: 'hit' });
+  await new Promise((r) => setTimeout(r, 80));
+  expect(stickL.inbox.some((x) => x.t === 'buzz')).toBe(false);
+});
+
+test('buzz with unknown pattern or hand is dropped', async () => {
+  const game = await connect({ t: 'hello', role: 'game' });
+  const stickL = await connect({ t: 'hello', role: 'phone', hand: 'L', dev: 'stick' });
+  await new Promise((r) => setTimeout(r, 30));
+  game.send({ t: 'buzz', hand: 'both', pattern: 'x'.repeat(500) });
+  game.send({ t: 'buzz', hand: 'Q', pattern: 'hit' });
+  await new Promise((r) => setTimeout(r, 80));
+  expect(stickL.inbox.some((x) => x.t === 'buzz')).toBe(false);
+});
+
+test('late game join hears dev', async () => {
+  await connect({ t: 'hello', role: 'phone', hand: 'L', dev: 'stick' });
+  await connect({ t: 'hello', role: 'phone', hand: 'R' });
+  await new Promise((r) => setTimeout(r, 30));
+  const game = await connect({ t: 'hello', role: 'game' });
+  await until(() => game.inbox.filter((x) => x.t === 'hello').length === 2);
+  expect(game.inbox).toContainEqual({ t: 'hello', role: 'phone', hand: 'L', dev: 'stick' });
+  expect(game.inbox).toContainEqual({ t: 'hello', role: 'phone', hand: 'R', dev: 'phone' });
 });

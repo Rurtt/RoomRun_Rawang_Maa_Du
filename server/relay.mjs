@@ -1,4 +1,4 @@
-// Relay: phones -> game over one WebSocket path, plus the built game as static
+// Relay: phones/sticks -> game (buzz game -> sticks) over one WebSocket path, plus the built game as static
 // files and the tunnel URL for the title-screen QR. Logs every motion sample
 // (raw data for the ESP32 stick work later).
 import { createServer } from 'node:http';
@@ -11,6 +11,8 @@ const MIME = {
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.ogg': 'audio/ogg', '.glb': 'model/gltf-binary',
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.ico': 'image/x-icon',
 };
+
+const BUZZ = new Set(['hit', 'caught', 'pack', 'jump']);
 
 const pad = (n) => String(n).padStart(2, '0');
 function stamp(d = new Date()) {
@@ -58,9 +60,10 @@ export async function createRelay({ port, staticDir, logDir }) {
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
   /** @type {Set<import('ws').WebSocket>} */
   const games = new Set();
-  /** @type {Map<import('ws').WebSocket, 'L'|'R'>} */
+  /** @type {Map<import('ws').WebSocket, { hand: 'L'|'R', dev: 'stick'|'phone' }>} */
   const phones = new Map();
   const toGames = (text) => { for (const g of games) if (g.readyState === 1) g.send(text); };
+  const helloOf = ({ hand, dev }) => JSON.stringify({ t: 'hello', role: 'phone', hand, dev });
 
   wss.on('connection', (ws) => {
     ws.on('message', (data) => {
@@ -70,22 +73,31 @@ export async function createRelay({ port, staticDir, logDir }) {
       if (!msg || typeof msg !== 'object') return;
       if (msg.t === 'hello' && msg.role === 'game') {
         games.add(ws);
-        // tell a late-joining game which phones are already here
-        for (const hand of phones.values()) ws.send(JSON.stringify({ t: 'hello', role: 'phone', hand }));
+        // tell a late-joining game which phones/sticks are already here
+        for (const p of phones.values()) ws.send(helloOf(p));
       } else if (msg.t === 'hello' && msg.role === 'phone' && (msg.hand === 'L' || msg.hand === 'R')) {
-        phones.set(ws, msg.hand);
-        toGames(text);
-      } else if ((msg.t === 'm' || msg.t === 'tap') && phones.has(ws)) {
-        // only registered phones, and only as the hand they registered;
-        // taps are logged too, so they mark moments in a recording
-        const sample = { ...msg, hand: phones.get(ws) };
+        const p = { hand: msg.hand, dev: msg.dev === 'stick' ? 'stick' : 'phone' };
+        phones.set(ws, p);
+        toGames(helloOf(p));
+      } else if ((msg.t === 'm' || msg.t === 'tap' || msg.t === 'btn' || msg.t === 'bat') && phones.has(ws)) {
+        // only registered devices, and only as the hand they registered;
+        // taps/buttons are logged too, so they mark moments in a recording
+        const { hand, dev } = phones.get(ws);
+        const sample = { ...msg, hand, dev };
         toGames(JSON.stringify(sample));
         if (!log) { mkdirSync(logDir, { recursive: true }); log = createWriteStream(logPath, { flags: 'a' }); }
         log.write(JSON.stringify({ ...sample, rt: Date.now() }) + '\n');
+      } else if (msg.t === 'buzz' && games.has(ws) && BUZZ.has(msg.pattern)
+        && (msg.hand === 'L' || msg.hand === 'R' || msg.hand === 'both')) {
+        // game -> stick(s) only; phones ignore buzz, so they are not sent it
+        const out = JSON.stringify({ t: 'buzz', pattern: msg.pattern });
+        for (const [dws, p] of phones) {
+          if (p.dev === 'stick' && (msg.hand === 'both' || msg.hand === p.hand) && dws.readyState === 1) dws.send(out);
+        }
       } else if (msg.t === 'ping') {
         ws.send(JSON.stringify({ t: 'pong', id: msg.id, ts: msg.ts }));
-        const hand = phones.get(ws);
-        if (hand && typeof msg.rtt === 'number') toGames(JSON.stringify({ t: 'rtt', hand, ms: msg.rtt }));
+        const p = phones.get(ws);
+        if (p && typeof msg.rtt === 'number') toGames(JSON.stringify({ t: 'rtt', hand: p.hand, ms: msg.rtt }));
       }
     });
     ws.on('close', () => { games.delete(ws); phones.delete(ws); });
