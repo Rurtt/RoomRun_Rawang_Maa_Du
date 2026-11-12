@@ -1,3 +1,5 @@
+> **Moved.** This repo is the old phone-controller version (Oct 2026), kept as history. The game now lives at **https://github.com/Rurtt/RoomRun** (Bluetooth sticks), playable at **https://rurtt.github.io/RoomRun/**.
+
 # ระวังหมาดุ (Rawang Maa Du): "Beware of the Fierce Dog"
 
 **English** | [ภาษาไทย](README.th.md)

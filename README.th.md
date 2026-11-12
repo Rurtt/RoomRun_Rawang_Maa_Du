@@ -1,3 +1,5 @@
+> **ย้ายแล้ว** repo นี้คือเวอร์ชันเก่าที่ใช้มือถือเป็นจอย (ต.ค. 2026) เก็บไว้เป็นประวัติ เกมตัวปัจจุบันอยู่ที่ **https://github.com/Rurtt/RoomRun** (จอยบลูทูธ) เล่นได้ที่ **https://rurtt.github.io/RoomRun/**
+
 # ระวังหมาดุ (Rawang Maa Du)
 
 [English](README.md) | **ภาษาไทย**
